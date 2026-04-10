@@ -1,0 +1,167 @@
+# Data Integrity & Maturity Gating (DMG)
+The enforcement layer for every smart feature. Intelligence is a privilege earned through data density.
+No feature may render confident numbers without passing the DMG threshold for its feature area.
+
+## The 4-Level Data Maturity Gate
+
+Every smart feature implements exactly these four states — no exceptions.
+
+| Level | Name | Trigger | UI Behavior |
+|-------|------|---------|-------------|
+| 0 | Ghost | 0 data points | Feature hidden entirely, or shows intro card with "Upload to Start" CTA |
+| 1 | Cold | < 50% required data | Amber banner + Data Hunt checklist + "Upload Missing" button |
+| 2 | Warm | ≥ 70% required data | Speculative Mode: blurred or range numbers, "Low Confidence" badge |
+| 3 | Mature | 100% required data, verified sources | Full smart feature, precise numbers, "Verified Data" badge |
+
+**The rule:** Design all four states BEFORE writing happy-path code. The locked state is not an afterthought.
+
+---
+
+## Source Weight Hierarchy
+
+Not all data is equal. Source quality determines maximum reachable maturity level.
+
+| Source | Weight | Max Level Achievable |
+|--------|--------|---------------------|
+| Plaid bank sync (cryptographically signed) | Highest | Level 3 (Mature) |
+| Gemini-verified OCR document | High | Level 3 (Mature) |
+| Manual user entry | Low | Level 2 (Warm) max — NEVER unlocks Level 3 |
+| Extrapolated/estimated data | None | Level 1 (Cold) only |
+
+**Why:** Manual entry has no audit trail. A manually entered paystub amount could be wrong by $10,000. Projections based on it would be confidently wrong. Manual data shows a "Speculative Mode" watermark permanently.
+
+---
+
+## Speculative Mode (Warm unlock with watermark)
+
+Users may choose to see Level 2 (Warm) projections before reaching Level 3. This is allowed, but only with a permanent visible watermark:
+
+```
+⚠️ SPECULATIVE MODE — Based on unverified or incomplete data.
+   These numbers are estimates only. Do not use for tax filing.
+```
+
+**Rules:**
+- Watermark must be visible on every number in Speculative Mode — not just a banner at the top
+- Numbers shown as ranges, not precise figures: "$42,000 – $51,000" not "$46,500"
+- Export is disabled in Speculative Mode. No downloads of unverified projections.
+- There is no "Force Unlock Level 3." Mature status requires real data. Period.
+
+---
+
+## Stale Data Auto-Revert
+
+Maturity is not permanent. Recurring data points that go missing degrade the feature.
+
+**Rule:** If an expected recurring data point (monthly paystub, weekly transaction sync, quarterly statement) is missing for more than 35 days, the feature automatically reverts from Mature → Warm.
+
+**Implementation:** A scheduled job (daily) checks last_received_at for each recurring data type per user. If gap > 35 days, set maturity_score to Warm for that feature area. Show banner: "Your data may be out of date. Upload your latest paystub to restore full accuracy."
+
+---
+
+## Per-Feature Maturity (Independent Gates)
+
+Each feature area has its own independent maturity score. Missing a tax document does not break budget features.
+
+| Feature Area | Key: profiles table | Required Data |
+|---|---|---|
+| Tax Projection | `tax_maturity` | W-2, paystubs (≥2), transactions, filing status, state |
+| Budget Analysis | `budget_maturity` | 3+ months of transactions, income source |
+| Cash Flow | `cashflow_maturity` | 60+ days of linked accounts or bank statements |
+| Business Margin | `margin_maturity` | Revenue records, expense categories, time period |
+
+**Architectural pattern — cache in profiles table:**
+```sql
+-- Add to profiles table migration
+ALTER TABLE profiles ADD COLUMN tax_maturity INTEGER DEFAULT 0 CHECK (tax_maturity BETWEEN 0 AND 3);
+ALTER TABLE profiles ADD COLUMN budget_maturity INTEGER DEFAULT 0 CHECK (budget_maturity BETWEEN 0 AND 3);
+ALTER TABLE profiles ADD COLUMN cashflow_maturity INTEGER DEFAULT 0 CHECK (cashflow_maturity BETWEEN 0 AND 3);
+ALTER TABLE profiles ADD COLUMN margin_maturity INTEGER DEFAULT 0 CHECK (margin_maturity BETWEEN 0 AND 3);
+ALTER TABLE profiles ADD COLUMN maturity_updated_at TIMESTAMPTZ DEFAULT NOW();
+
+-- Update via DB trigger on document upload (not on every page load)
+CREATE OR REPLACE FUNCTION update_maturity_score()
+RETURNS TRIGGER AS $$
+BEGIN
+  -- Recalculate maturity for the affected feature area
+  -- Call the appropriate scoring function based on NEW.document_type
+  PERFORM recalculate_tax_maturity(NEW.user_id);
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER on_document_uploaded
+AFTER INSERT OR UPDATE ON documents
+FOR EACH ROW EXECUTE FUNCTION update_maturity_score();
+```
+
+**Why trigger not page load:** Running completeness checks on every page load adds 50-200ms per view and adds DB load. Caching the score and updating it only when documents change keeps the UI instantaneous.
+
+---
+
+## Proximity Check (Temporal Integrity Enforcement)
+
+Before accepting any financial document, verify it belongs to the current or selected fiscal period.
+
+```typescript
+function validateDocumentPeriod(doc: Document, selectedYear: number): ValidationResult {
+  const docYear = extractTaxYear(doc); // from W-2 box, paystub date, statement header
+  if (docYear !== selectedYear) {
+    return {
+      valid: false,
+      warning: `This document is from ${docYear}. You're viewing ${selectedYear}.
+                Do you want to add it to your ${docYear} records instead?`,
+      suggestedYear: docYear
+    };
+  }
+  return { valid: true };
+}
+```
+
+Never silently accept a document into the wrong year. Always ask, never assume.
+
+---
+
+## Data Basis Disclosure (mandatory on every smart number)
+
+Every projected or calculated number must show its source basis inline or via tooltip.
+
+```
+Annual Income Projection: $87,400
+Based on: 8 of ~24 expected paystubs (Warm — 33% complete)
+Source: Gemini-verified PDFs
+Last updated: April 3, 2026
+```
+
+If data basis cannot be shown, the number should not be shown.
+
+---
+
+## Integrity-First Definition of Done
+
+Add these checks to every smart feature task before marking DONE:
+
+- [ ] **Data-Gate Implemented:** Feature handles all 4 DMG levels (Ghost/Cold/Warm/Mature)
+- [ ] **Source Weight Enforced:** Manual entry capped at Level 2. Verified sources required for Level 3.
+- [ ] **Speculative Mode Watermark:** Visible on every number when in Warm mode, not just header banner
+- [ ] **Stale Data Trigger Written:** Recurring data staleness check exists (35-day rule)
+- [ ] **Maturity Cached in DB:** profiles table has the maturity column, trigger updates it on doc upload
+- [ ] **Per-Feature Independence:** This feature's gate does not affect other feature areas
+- [ ] **Proximity Check:** Document year validation fires before accepting any financial document
+- [ ] **Zero-Data State Verified:** Tested with no uploads — feature shows Ghost state, not broken UI
+- [ ] **Account Delete Test:** Deleting user data resets all maturity scores to 0
+- [ ] **Export Disabled in Speculative Mode:** No downloads allowed below Level 3
+
+---
+
+## When to Apply This Rule
+
+Apply to every feature that produces a number, insight, projection, advice, or report that a user might act on:
+
+- Tax projections, tax liability, estimated refunds
+- Income projections, cash flow forecasts
+- Margin signals, revenue trends, budget analysis
+- AI financial advice, spending insights, category summaries
+- Any "smart" recommendation or alert
+
+Do NOT apply to: pure data lists (transaction history), raw document storage, settings pages, navigation.
