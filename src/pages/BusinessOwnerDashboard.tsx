@@ -4,6 +4,7 @@ import { cn } from '@/lib/utils'
 import { tenantConfig } from '@/lib/tenant.config'
 import { isDemoMode } from '@/lib/mode'
 import { generateDemoPackage } from '@/lib/finance-prep'
+import { useAccountType } from '@/hooks/useAccountType'
 import {
   Upload,
   Camera,
@@ -30,8 +31,6 @@ const DEMO_SNAPSHOT = {
   netCashFlow: 3_400,
 }
 
-const DEMO_CLIENT_PATH = '/clients/demo-acme-supplies'
-
 // ─── HELPERS ──────────────────────────────────────────────────────────────────
 
 function formatCurrency(amount: number): string {
@@ -50,6 +49,9 @@ function getCurrentMonthYear(): string {
 // ─── COMPONENT ────────────────────────────────────────────────────────────────
 
 export function BusinessOwnerDashboard() {
+  const { selfClientId } = useAccountType()
+  const clientPath = selfClientId ? `/clients/${selfClientId}` : '/clients'
+
   const [bookkeeperCost, setBookkeeperCost] = useState(500)
   const [generatingPackage, setGeneratingPackage] = useState(false)
   const [packageGenerated, setPackageGenerated] = useState(false)
@@ -88,28 +90,28 @@ export function BusinessOwnerDashboard() {
       <section className="mb-12">
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <QuickActionCard
-            to={`${DEMO_CLIENT_PATH}?tab=analysis`}
+            to={`${clientPath}?tab=analysis`}
             icon={Upload}
             title="Upload Statements"
             description="Upload bank or credit card statements"
             accent="bg-emerald-50 text-emerald-600"
           />
           <QuickActionCard
-            to={`${DEMO_CLIENT_PATH}?tab=analysis`}
+            to={`${clientPath}?tab=analysis`}
             icon={Camera}
             title="Scan Receipts"
             description="Photograph or upload paper receipts"
             accent="bg-blue-50 text-blue-600"
           />
           <QuickActionCard
-            to={`${DEMO_CLIENT_PATH}?tab=analysis`}
+            to={`${clientPath}?tab=analysis`}
             icon={BarChart3}
             title="View Reports"
             description="See your spending patterns and trends"
             accent="bg-violet-50 text-violet-600"
           />
           <QuickActionCard
-            to={`${DEMO_CLIENT_PATH}?tab=export`}
+            to={`${clientPath}?tab=export`}
             icon={Package}
             title="Finance Prep Package"
             description="One-click package for your bookkeeper"
@@ -177,7 +179,7 @@ export function BusinessOwnerDashboard() {
               We'll auto-categorize every transaction and surface insights instantly.
             </p>
             <Link
-              to={`${DEMO_CLIENT_PATH}?tab=analysis`}
+              to={`${clientPath}?tab=analysis`}
               className="mt-4 inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-5 py-2.5 text-sm font-medium text-white shadow-sm transition hover:bg-emerald-700"
             >
               <Upload className="h-4 w-4" />
@@ -316,7 +318,7 @@ export function BusinessOwnerDashboard() {
         </p>
         <div className="flex flex-wrap items-center justify-center gap-3">
           <Link
-            to={`${DEMO_CLIENT_PATH}?tab=analysis`}
+            to={`${clientPath}?tab=analysis`}
             className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-6 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-700"
           >
             <Upload className="h-4 w-4" />

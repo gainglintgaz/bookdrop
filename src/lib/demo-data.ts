@@ -88,6 +88,11 @@ const demoRequirements: Record<string, DocumentRequirement[]> = {
     { id: 'req-014', client_id: 'client-005', label: 'TD Bank Statement', doc_type: 'bank', required: true, sort_order: 0 },
     { id: 'req-015', client_id: 'client-005', label: 'Mastercard Statement', doc_type: 'credit_card', required: true, sort_order: 1 },
   ],
+  'client-solo-001': [
+    { id: 'req-s01', client_id: 'client-solo-001', label: 'Chase Business Checking — Statement', doc_type: 'bank', required: true, sort_order: 0 },
+    { id: 'req-s02', client_id: 'client-solo-001', label: 'Amex Business Card — Statement', doc_type: 'credit_card', required: true, sort_order: 1 },
+    { id: 'req-s03', client_id: 'client-solo-001', label: 'Receipts & Invoices', doc_type: 'receipt', required: false, sort_order: 2 },
+  ],
 }
 
 // Some clients have uploads, some don't (realistic mix)
@@ -107,6 +112,9 @@ const demoUploads: DocumentUpload[] = [
   // Client 4: not started (no uploads)
   // Client 5: partial — 1 of 2
   { id: 'up-007', requirement_id: 'req-014', client_id: 'client-005', bookkeeper_id: 'bk-demo-001', period_year: year, period_month: month, filename_original: 'td_bank_apr2026.pdf', storage_path: 'demo/td.pdf', file_size_bytes: 225_280, uploaded_at: '2026-04-03T16:45:00Z' },
+
+  // Solo client (Mike Torres / Acme Supplies): partial — 1 of 2 required
+  { id: 'up-s01', requirement_id: 'req-s01', client_id: 'client-solo-001', bookkeeper_id: 'bk-demo-solo-001', period_year: year, period_month: month, filename_original: 'chase_checking_apr2026.pdf', storage_path: 'demo/solo-chase.pdf', file_size_bytes: 198_656, uploaded_at: '2026-04-05T10:30:00Z' },
 ]
 
 const demoClients: Client[] = [
@@ -115,6 +123,7 @@ const demoClients: Client[] = [
   { id: 'client-003', bookkeeper_id: 'bk-demo-001', business_name: 'Greenleaf Landscaping', contact_name: 'Sarah Johnson', contact_email: 'sarah@greenleaf.co', portal_token: 'eF5zM7oR4uVw', notes_private: null, notes_for_client: 'Include any receipts for equipment purchases.', is_active: true, created_at: '2026-02-15T10:00:00Z' },
   { id: 'client-004', bookkeeper_id: 'bk-demo-001', business_name: 'TechBridge Solutions', contact_name: 'Alex Kim', contact_email: 'alex@techbridge.io', portal_token: 'gH6aN8pS5wXy', notes_private: 'New client. First month collecting docs.', notes_for_client: 'Welcome! Upload your monthly financial documents here.', is_active: true, created_at: '2026-03-10T10:00:00Z' },
   { id: 'client-005', bookkeeper_id: 'bk-demo-001', business_name: 'Bella Hair Salon', contact_name: 'Jessica Park', contact_email: 'jessica@bellahair.com', portal_token: 'iJ7bO9qT6xZa', notes_private: null, notes_for_client: null, is_active: true, created_at: '2026-03-20T10:00:00Z' },
+  { id: 'client-solo-001', bookkeeper_id: 'bk-demo-solo-001', business_name: 'Acme Supplies LLC', contact_name: 'Mike Torres', contact_email: 'mike@acmesupplies.com', portal_token: 'kL8cP2rU7yBd', notes_private: null, notes_for_client: null, is_active: true, created_at: '2026-03-01T10:00:00Z' },
 ]
 
 const demoReminderLogs: ReminderLog[] = [
