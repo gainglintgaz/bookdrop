@@ -180,6 +180,32 @@ See golden-paths.md
 
 ---
 
+## LEGAL GUARDRAILS (MANDATORY — read LEGAL_GUARDRAILS.md)
+
+**Philosophy:** Show data. Never tell users what to do with it.
+
+**Three rules every session must follow:**
+1. **Level 1 (build freely):** Tracking, categorization, totals, exports, benchmarks
+2. **Level 2 (add disclaimer):** Estimation calculators, flagging thresholds, what-if scenarios
+3. **Level 3 (never build):** "You should deduct...", "File Form...", "Invest in...", moving money
+
+**Banned phrases in financial context:** "You should", "We recommend", "Deduct this on",
+"File Form", "Adjust your", "Consider [financial action]", "Tax advice", "Financial advisor"
+
+**Safe alternatives:** Use observations ("Categorized as: Office Expense"), flags
+("1099 threshold reached for this vendor"), and data ("Net cash flow: $X this month").
+
+**Before building any feature touching money/taxes/recommendations:**
+- Check LEGAL_GUARDRAILS.md for the Level
+- If Level 2: add disclaimer template from that doc
+- If Level 3: refuse to build, explain why
+
+**Archived tax features:** `archive/tax-features` branch has the tax estimator and
+tax intelligence engine. Can be restored with Level 2 disclaimers or when Victor gets
+a PTIN ($30.75). Do NOT restore without reviewing LEGAL_GUARDRAILS.md first.
+
+---
+
 ## ARCHITECTURAL DECISIONS (LOCKED)
 
 1. Client upload page uses portal_token, NOT Supabase auth — clients never create accounts

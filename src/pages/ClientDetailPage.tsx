@@ -944,7 +944,7 @@ function AnalysisTab({
               Generate & Download Meeting Agenda
             </button>
             <p className="mt-3 text-xs text-gray-500">
-              Includes financial overview, tax planning notes, issues to address, action items, and a follow-up email template.
+              Includes financial overview, document status, issues to address, action items, and a follow-up email template.
             </p>
           </div>
         </div>
