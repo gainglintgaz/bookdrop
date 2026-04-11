@@ -317,20 +317,21 @@ export function ClientDetailPage() {
 
       {/* ─── TAB BAR ────────────────────────────────────────────────────────────── */}
       <div className="mb-6 border-b border-gray-200">
-        <nav className="-mb-px flex gap-6">
+        <nav className="-mb-px flex gap-1 sm:gap-6">
           {TABS.map(tab => (
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
+              title={tab.label}
               className={cn(
-                'flex items-center gap-2 border-b-2 px-1 pb-3 text-sm font-medium transition-colors',
+                'flex items-center gap-2 border-b-2 px-2 pb-3 text-sm font-medium transition-colors sm:px-1',
                 activeTab === tab.id
                   ? 'border-primary text-primary'
                   : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700',
               )}
             >
               <tab.icon className="h-4 w-4" />
-              {tab.label}
+              <span className="hidden sm:inline">{tab.label}</span>
             </button>
           ))}
         </nav>

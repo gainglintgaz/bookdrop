@@ -161,7 +161,7 @@ export function SettingsPage() {
         {/* Plan & Billing */}
         <fieldset className="rounded-lg border border-gray-200 bg-white p-5">
           <legend className="px-2 text-sm font-semibold text-gray-700">Plan & Billing</legend>
-          <div className="flex items-center justify-between">
+          <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <p className="text-sm font-medium text-gray-900 capitalize">{bookkeeper.plan} Plan</p>
               <p className="text-xs text-gray-500">

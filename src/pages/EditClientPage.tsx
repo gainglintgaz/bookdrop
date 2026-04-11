@@ -223,7 +223,7 @@ export function EditClientPage() {
             <input id="businessName" required value={businessName} onChange={e => setBusinessName(e.target.value)} className={inputClasses} />
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
               <label htmlFor="contactName" className="block text-sm font-medium text-gray-700">Contact Name</label>
               <input id="contactName" value={contactName} onChange={e => setContactName(e.target.value)} className={inputClasses} />

@@ -100,9 +100,9 @@ export function DashboardPage() {
   return (
     <div className="p-6 lg:p-8 max-w-7xl mx-auto">
       {/* ---- Welcome Header ---- */}
-      <div className="mb-8 flex flex-wrap items-start justify-between gap-4">
+      <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">
+          <h1 className="text-xl font-bold text-gray-900 sm:text-2xl">
             {getGreeting()}, {firstName}
           </h1>
           <p className="mt-1 text-sm text-gray-500">
@@ -115,7 +115,7 @@ export function DashboardPage() {
             )}
           </p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2">
           <MonthSelector year={period.year} month={period.month} onChange={setPeriod} />
           {canAddClient ? (
             <Link
@@ -348,13 +348,13 @@ export function DashboardPage() {
               </div>
             )}
             <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm">
+              <table className="min-w-[560px] w-full text-left text-sm">
                 <thead>
                   <tr className="border-b border-gray-100 bg-gray-50/50">
                     <th className="px-4 py-3 font-medium text-gray-500 text-xs uppercase tracking-wide">Client</th>
                     <th className="px-4 py-3 font-medium text-gray-500 text-xs uppercase tracking-wide">Status</th>
-                    <th className="px-4 py-3 font-medium text-gray-500 text-xs uppercase tracking-wide">Progress</th>
-                    <th className="px-4 py-3 font-medium text-gray-500 text-xs uppercase tracking-wide">Last Upload</th>
+                    <th className="hidden px-4 py-3 font-medium text-gray-500 text-xs uppercase tracking-wide sm:table-cell">Progress</th>
+                    <th className="hidden px-4 py-3 font-medium text-gray-500 text-xs uppercase tracking-wide sm:table-cell">Last Upload</th>
                     <th className="px-4 py-3 text-right font-medium text-gray-500 text-xs uppercase tracking-wide">Actions</th>
                   </tr>
                 </thead>
@@ -562,7 +562,7 @@ function ClientRow({ client }: { client: ClientWithStatus }) {
       <td className="px-4 py-3.5">
         <StatusBadge status={client.submissionStatus} />
       </td>
-      <td className="px-4 py-3.5">
+      <td className="hidden px-4 py-3.5 sm:table-cell">
         {requiredCount > 0 ? (
           <div className="flex items-center gap-2.5">
             <div className="h-2 w-24 overflow-hidden rounded-full bg-gray-100">
@@ -580,7 +580,7 @@ function ClientRow({ client }: { client: ClientWithStatus }) {
           <span className="text-xs text-gray-400">No docs required</span>
         )}
       </td>
-      <td className="px-4 py-3.5">
+      <td className="hidden px-4 py-3.5 sm:table-cell">
         {lastUpload ? (
           <span className="flex items-center gap-1.5 text-xs text-gray-500">
             <Calendar className="h-3 w-3 text-gray-400" />
