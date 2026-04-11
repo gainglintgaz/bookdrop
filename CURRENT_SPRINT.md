@@ -1,12 +1,12 @@
 # CURRENT_SPRINT.md — BookDrop
 ## Update this after EVERY task. This is how Claude Code knows what to do next.
 
-Last updated: 2026-04-06
+Last updated: 2026-04-10
 Sprint goal: Ship V1 — connect services, deploy, go live
 
 ---
 
-## STATUS: CODE COMPLETE — Awaiting service configuration + deploy
+## STATUS: DEPLOYED — Live at https://bookkeeper-portal.vercel.app (demo mode)
 
 ---
 
@@ -74,10 +74,9 @@ Sprint goal: Ship V1 — connect services, deploy, go live
 - [x] 16 intelligence engines (parser, reconciliation, categorization, tax intelligence, etc.)
 - [x] ZIP download, send reminder, edit, copy portal link
 
-### Tax Estimator
-- [x] TaxEstimatorPage hub — personal vs business separation
-- [x] PersonalTaxEstimatorPage — W-2, investments, dependents, credits
-- [x] BusinessTaxEstimatorPage — Schedule C, S-Corp, QBI, quarterly estimates
+### Tax Estimator (ARCHIVED — 2026-04-10)
+- ~~TaxEstimatorPage~~ — archived; legal guardrails require licensed CPA review
+- See LEGAL_GUARDRAILS.md for rationale; routes removed, HelpPage updated
 
 ### Settings
 - [x] Profile, reminder tone, notification preferences, plan management
@@ -132,8 +131,14 @@ Sprint goal: Ship V1 — connect services, deploy, go live
 ### Routing
 - [x] Public: /, /upload/:token, /login, /signup, /forgot-password
 - [x] Protected: /dashboard, /clients, /clients/new, /clients/:id, /clients/:id/edit
-- [x] Protected: /tax-estimator, /tax-estimator/personal, /tax-estimator/business
 - [x] Protected: /settings
+- ~~Protected: /tax-estimator/*~~ — archived
+
+### Overnight Polish (2026-04-10)
+- [x] Task 1: Mobile responsive pass — hamburger drawer, table min-width + hidden cols, tab icons-only on mobile, form grids stack to 1-col, billing flex-wrap
+- [x] Task 2: Dead button audit — fixed DashboardPage CTA to /clients/client-001, AppShell demo banner link verified
+- [x] Task 3: Empty state verification — added client-solo-001 to demo data; fixed BusinessOwnerDashboard dead links (6 occurrences of /clients/demo-acme-supplies) using useAccountType().selfClientId; ClientDetailPage now respects ?tab= URL param
+- [x] Task 4: Error handling audit — wired sendError state in MessagePanel (send failure was silently swallowed); all other catch blocks verified
 
 ---
 
@@ -168,15 +173,44 @@ Sprint goal: Ship V1 — connect services, deploy, go live
 
 ## AFTER DEPLOY (polish)
 
+- [x] Mobile responsive pass — DONE
+- [x] Dead button audit — DONE
 - [ ] Test full flow: signup → add client → upload → dashboard → reminder → ZIP
 - [ ] Test Stripe: upgrade → webhook → plan change → customer portal
-- [ ] Mobile responsive pass (dashboard, upload page, client detail)
 - [ ] Add OG image (og:image meta tag — needs a designed image)
 - [ ] PostHog analytics integration (optional)
 
 ---
 
+## BLOCKED ON USER (service accounts + secrets)
+
+### 1. Run Supabase Migrations (~10 min)
+- [ ] Go to https://supabase.com/dashboard/project/mvvadmlivrpyawmlaqye → SQL Editor
+- [ ] Paste + run `supabase/migrations/001_initial_schema.sql`
+- [ ] Paste + run `supabase/migrations/002_account_type.sql`
+- [ ] Paste + run `supabase/migrations/003_esignatures.sql`
+- [ ] Verify Storage → `documents` bucket exists (private, 50MB)
+- [ ] Copy service_role key from Settings → API
+
+### 2. Create Resend Account (~5 min)
+- [ ] Go to https://resend.com → Create account → API Keys → Create key
+- [ ] Add sending domain OR use onboarding@resend.dev for testing
+
+### 3. Create Stripe Products (~15 min)
+- [ ] Go to https://dashboard.stripe.com → Products
+- [ ] Create "BookDrop Starter" — $39/mo recurring → copy Price ID
+- [ ] Create "BookDrop Pro" — $79/mo recurring → copy Price ID
+- [ ] Copy publishable key + secret key from Developers → API keys
+
+### 4. Set Vercel env vars for cloud mode
+- [ ] Set VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY
+- [ ] Set RESEND_API_KEY, STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET
+- [ ] Set VITE_MODE=cloud (removes demo banner, activates live Supabase)
+- [ ] After deploy: add Stripe webhook → https://your-domain/api/stripe/webhook
+
+---
+
 ## NEXT SESSION START HERE:
-→ If migrations are run: switch VITE_MODE=cloud, test end-to-end
-→ If Stripe is configured: test checkout flow
-→ If deployed: run full smoke test
+→ Migrations done? Switch VITE_MODE=cloud in Vercel, redeploy, test end-to-end
+→ Stripe configured? Test checkout → webhook → plan change → customer portal
+→ Need content? Add OG image for social sharing
