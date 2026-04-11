@@ -50,6 +50,7 @@ export function MessagePanel({
   const [loading, setLoading] = useState(true)
   const [inputText, setInputText] = useState('')
   const [sending, setSending] = useState(false)
+  const [sendError, setSendError] = useState<string | null>(null)
   const [attachedFiles, setAttachedFiles] = useState<File[]>([])
   const [dragOver, setDragOver] = useState(false)
 
@@ -97,6 +98,7 @@ export function MessagePanel({
     if (!trimmed && attachedFiles.length === 0) return
 
     setSending(true)
+    setSendError(null)
     try {
       const newMsg = await sendMessage(
         clientId,
@@ -108,7 +110,7 @@ export function MessagePanel({
       setInputText('')
       setAttachedFiles([])
     } catch {
-      // Could show error toast here
+      setSendError('Failed to send — please try again')
     } finally {
       setSending(false)
     }
@@ -333,9 +335,11 @@ export function MessagePanel({
             )}
           </button>
         </div>
-        <p className="mt-1 text-center text-[10px] text-gray-300">
-          Ctrl+Enter to send
-        </p>
+        {sendError ? (
+          <p className="mt-1 text-center text-[10px] text-red-500">{sendError}</p>
+        ) : (
+          <p className="mt-1 text-center text-[10px] text-gray-300">Ctrl+Enter to send</p>
+        )}
       </div>
     </div>
   )
