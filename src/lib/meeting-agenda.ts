@@ -157,12 +157,12 @@ function buildTaxPlanning(config: AgendaConfig): AgendaItem | null {
   // Quarterly estimated tax reminder for relevant months
   const quarterEndMonths = [3, 6, 9, 12]
   if (quarterEndMonths.includes(config.month)) {
-    notes.push('Quarterly estimated tax payment may be due -- review with tax advisor')
-    actionItems.push('Confirm quarterly estimated tax payment amount with CPA')
+    notes.push('Quarterly estimated tax payment may be due -- check with your tax professional')
+    actionItems.push('Review quarterly documents with tax professional')
   }
 
   return {
-    title: 'Tax Planning & Deductions',
+    title: 'Tax-Related Documents & Deadlines',
     duration: '5 min',
     priority: 'should-discuss',
     notes,

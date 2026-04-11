@@ -454,7 +454,7 @@ function generateAlerts(
       severity: 'critical',
       title: 'Cash crunch ahead',
       detail: runwayMonths <= 1
-        ? 'At current burn rate, cash could run out within a month. Immediate action recommended.'
+        ? 'At current burn rate, cash could run out within a month. Review with your accountant.'
         : `At current burn rate, cash could run out in approximately ${runwayMonths} months.`,
     })
   }

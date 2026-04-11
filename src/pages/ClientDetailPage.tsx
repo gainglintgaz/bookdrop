@@ -24,7 +24,6 @@ import { generateBookkeeperPackage } from '@/lib/finance-prep'
 import { useAccountType } from '@/hooks/useAccountType'
 import { StatementParserPanel } from '@/components/practitioner/StatementParserPanel'
 import { InsightsPanel } from '@/components/practitioner/InsightsPanel'
-import { TaxIntelligencePanel } from '@/components/practitioner/TaxIntelligencePanel'
 import { CashFlowForecastPanel } from '@/components/practitioner/CashFlowForecastPanel'
 import { AuditReportPanel } from '@/components/practitioner/AuditReportPanel'
 import { WorkflowResultPanel } from '@/components/practitioner/WorkflowResultPanel'
@@ -33,7 +32,6 @@ import { getDemoWorkflowResult, type WorkflowResult } from '@/lib/workflow-engin
 import { generateInsights, generateClientReport, type MonthlyInsights } from '@/lib/insights'
 import { categorizeTransactions, type CategorizationReport } from '@/lib/categorization-engine'
 import { generateCashFlowForecast, type CashFlowForecast } from '@/lib/cash-flow-forecast'
-import { generateTaxIntelligence, type TaxIntelligenceReport } from '@/lib/tax-intelligence'
 import { runAuditChecks, type AuditReport } from '@/lib/duplicate-detector'
 import { analyzeTrends, type TrendReport } from '@/lib/trend-analysis'
 import { checkExpensePolicy, type PolicyReport } from '@/lib/expense-policy'
@@ -84,7 +82,6 @@ export function ClientDetailPage() {
   const [insights, setInsights] = useState<MonthlyInsights | null>(null)
   const [categorizationReport, setCategorizationReport] = useState<CategorizationReport | null>(null)
   const [cashForecast, setCashForecast] = useState<CashFlowForecast | null>(null)
-  const [taxReport, setTaxReport] = useState<TaxIntelligenceReport | null>(null)
   const [auditReport, setAuditReport] = useState<AuditReport | null>(null)
   const [trendReport, setTrendReport] = useState<TrendReport | null>(null)
   const [policyReport, setPolicyReport] = useState<PolicyReport | null>(null)
@@ -382,7 +379,6 @@ export function ClientDetailPage() {
               }))
               setCategorizationReport(categorizeTransactions(allTxns))
               setCashForecast(generateCashFlowForecast(stmts, period.year, period.month))
-              setTaxReport(generateTaxIntelligence(allTxns, period.year, period.month))
               setAuditReport(runAuditChecks(allTxns))
               setTrendReport(analyzeTrends(stmts))
               setPolicyReport(checkExpensePolicy(allTxns))
@@ -400,7 +396,6 @@ export function ClientDetailPage() {
           insights={insights}
           categorizationReport={categorizationReport}
           cashForecast={cashForecast}
-          taxReport={taxReport}
           auditReport={auditReport}
           trendReport={trendReport}
           policyReport={policyReport}
@@ -641,14 +636,13 @@ function DocumentsTab({
 
 // ─── ANALYSIS TAB ───────────────────────────────────────────────────────────
 
-type AnalysisSection = 'parse' | 'scan' | 'categorize' | 'insights' | 'tax' | 'forecast' | 'audit' | 'trends' | 'policy' | 'reconcile' | 'readiness' | 'meeting'
+type AnalysisSection = 'parse' | 'scan' | 'categorize' | 'insights' | 'forecast' | 'audit' | 'trends' | 'policy' | 'reconcile' | 'readiness' | 'meeting'
 
 const ANALYSIS_SECTIONS: { id: AnalysisSection; label: string; icon: typeof FileText; requiresParsed?: boolean }[] = [
   { id: 'parse', label: 'Parse', icon: FileText },
   { id: 'scan', label: 'Scan', icon: Camera },
   { id: 'categorize', label: 'Categorize', icon: Brain, requiresParsed: true },
   { id: 'insights', label: 'Insights', icon: BarChart3, requiresParsed: true },
-  { id: 'tax', label: 'Tax Intel', icon: Shield, requiresParsed: true },
   { id: 'forecast', label: 'Forecast', icon: TrendingUp, requiresParsed: true },
   { id: 'trends', label: 'Trends', icon: GitCompare, requiresParsed: true },
   { id: 'audit', label: 'Audit', icon: Search, requiresParsed: true },
@@ -669,7 +663,6 @@ function AnalysisTab({
   insights,
   categorizationReport,
   cashForecast,
-  taxReport,
   auditReport,
   trendReport,
   policyReport,
@@ -686,7 +679,6 @@ function AnalysisTab({
   insights: MonthlyInsights | null
   categorizationReport: CategorizationReport | null
   cashForecast: CashFlowForecast | null
-  taxReport: TaxIntelligenceReport | null
   auditReport: AuditReport | null
   trendReport: TrendReport | null
   policyReport: PolicyReport | null
@@ -831,19 +823,6 @@ function AnalysisTab({
         </div>
       ))}
 
-      {section === 'tax' && (!hasParsed ? emptyGate : taxReport && (
-        <div>
-          <div className="mb-4">
-            <h3 className="text-sm font-semibold text-gray-900">Tax Intelligence</h3>
-            <p className="mt-0.5 text-xs text-gray-500">
-              Deduction scanning, 1099 vendor tracking, quarterly tax estimates, missed deduction alerts, and tax-saving tips.
-              Finds money your clients are leaving on the table.
-            </p>
-          </div>
-          <TaxIntelligencePanel report={taxReport} />
-        </div>
-      ))}
-
       {section === 'forecast' && (!hasParsed ? emptyGate : cashForecast && (
         <div>
           {!hasEnoughForTrends && limitedDataBanner}
@@ -951,8 +930,8 @@ function AnalysisTab({
                     totalExpenses: insights.cashFlow.totalExpenses,
                     netCashFlow: insights.cashFlow.netCashFlow,
                   } : undefined,
-                  taxDeductible: taxReport?.deductions.totalDeductible,
-                  estimatedTaxSavings: taxReport?.deductions.estimatedTaxSavings,
+                  taxDeductible: undefined,
+                  estimatedTaxSavings: undefined,
                   anomalies: insights?.anomalies.map(a => ({ title: a.title, detail: a.detail })),
                   recommendations: insights?.advice.map(a => a.title),
                   forecastAlerts: cashForecast?.alerts.map(a => ({ title: a.title, detail: a.detail })),

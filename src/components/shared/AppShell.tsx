@@ -5,7 +5,7 @@ import { useAccountType } from '@/hooks/useAccountType'
 import { isDemoMode } from '@/lib/mode'
 import { tenantConfig } from '@/lib/tenant.config'
 import { cn } from '@/lib/utils'
-import { LayoutDashboard, Users, Settings, LogOut, Sparkles, ArrowRight, Calculator, Briefcase, HelpCircle } from 'lucide-react'
+import { LayoutDashboard, Users, Settings, LogOut, Sparkles, ArrowRight, Briefcase, HelpCircle } from 'lucide-react'
 import { NotificationCenter } from '@/components/shared/NotificationCenter'
 
 export function AppShell() {
@@ -21,7 +21,6 @@ export function AppShell() {
         ...(selfClientId
           ? [{ to: `/clients/${selfClientId}`, label: 'My Business', icon: Briefcase }]
           : []),
-        { to: '/tax-estimator', label: 'Tax Estimator', icon: Calculator },
         { to: '/help', label: 'Help', icon: HelpCircle },
         { to: '/settings', label: 'Settings', icon: Settings },
       ]
@@ -29,7 +28,6 @@ export function AppShell() {
     return [
       { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
       { to: '/clients', label: `${tenantConfig.clientLabel}s`, icon: Users },
-      { to: '/tax-estimator', label: 'Tax Estimator', icon: Calculator },
       { to: '/help', label: 'Help', icon: HelpCircle },
       { to: '/settings', label: 'Settings', icon: Settings },
     ]
@@ -120,7 +118,7 @@ export function AppShell() {
 
         {isDemoMode && isSolo && selfClientId && (
           <div className="bg-gradient-to-r from-amber-500/90 to-amber-600 text-white py-2.5 px-4 text-sm flex items-center justify-center gap-3">
-            <span>Explore your business dashboard — tax estimator, receipt scanning, and financial analysis</span>
+            <span>Explore your business dashboard — receipt scanning and financial tracking</span>
             <Link
               to={`/clients/${selfClientId}`}
               className="ml-2 inline-flex items-center gap-1 rounded-full bg-white/20 px-3 py-0.5 text-xs font-medium text-white hover:bg-white/30 transition-colors"

@@ -16,10 +16,10 @@ const practitionerBenefits = [
 ]
 
 const soloBenefits = [
-  { icon: Calculator, text: 'Tax estimator — personal & business' },
   { icon: Receipt, text: 'Receipt scanning & categorization' },
-  { icon: BarChart3, text: 'Financial analysis & insights' },
-  { icon: CheckCircle, text: 'No bookkeeper required' },
+  { icon: BarChart3, text: 'Financial tracking & reports' },
+  { icon: CheckCircle, text: 'Organize your books yourself' },
+  { icon: Calculator, text: 'Free plan available' },
 ]
 
 export function SignupPage() {
@@ -91,7 +91,7 @@ export function SignupPage() {
           </h2>
           <p className="mt-3 max-w-md text-sm leading-relaxed text-white/80">
             {isSolo
-              ? 'Tax prep, receipt scanning, categorization, and financial analysis — all in one place. No bookkeeper required.'
+              ? 'Receipt scanning, categorization, and financial tracking — all in one place. Organize your own books.'
               : 'Create your free account in 30 seconds. Add clients, share upload links, and start collecting documents today.'}
           </p>
           <div className="mt-8 space-y-4">
@@ -116,7 +116,7 @@ export function SignupPage() {
             <Link to="/" className="text-2xl font-bold text-primary-dark lg:hidden">{tenantConfig.productName}</Link>
             <h2 className="mt-2 text-xl font-bold text-gray-900 lg:mt-0">Create your account</h2>
             <p className="mt-1 text-sm text-gray-500">
-              {isSolo ? 'Free tax estimator & receipt scanning' : 'Free forever for up to 3 clients'}
+              {isSolo ? 'Free receipt scanning & financial tracking' : 'Free forever for up to 3 clients'}
             </p>
           </div>
 

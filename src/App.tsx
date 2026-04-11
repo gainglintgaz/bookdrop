@@ -18,9 +18,6 @@ const AddClientPage = lazy(() => import('@/pages/AddClientPage').then(m => ({ de
 const ClientDetailPage = lazy(() => import('@/pages/ClientDetailPage').then(m => ({ default: m.ClientDetailPage })))
 const SettingsPage = lazy(() => import('@/pages/SettingsPage').then(m => ({ default: m.SettingsPage })))
 const EditClientPage = lazy(() => import('@/pages/EditClientPage').then(m => ({ default: m.EditClientPage })))
-const TaxEstimatorPage = lazy(() => import('@/pages/TaxEstimatorPage').then(m => ({ default: m.TaxEstimatorPage })))
-const PersonalTaxEstimatorPage = lazy(() => import('@/pages/PersonalTaxEstimatorPage').then(m => ({ default: m.PersonalTaxEstimatorPage })))
-const BusinessTaxEstimatorPage = lazy(() => import('@/pages/BusinessTaxEstimatorPage').then(m => ({ default: m.BusinessTaxEstimatorPage })))
 const HelpPage = lazy(() => import('@/pages/HelpPage').then(m => ({ default: m.HelpPage })))
 
 // ─── Loading fallback ──────────────────────────────────────────────────────
@@ -63,9 +60,6 @@ export default function App() {
             <Route path="/clients/:clientId" element={<ClientDetailPage />} />
             <Route path="/clients/:clientId/edit" element={<EditClientPage />} />
             <Route path="/clients" element={<ClientsPage />} />
-            <Route path="/tax-estimator" element={<TaxEstimatorPage />} />
-            <Route path="/tax-estimator/personal" element={<PersonalTaxEstimatorPage />} />
-            <Route path="/tax-estimator/business" element={<BusinessTaxEstimatorPage />} />
             <Route path="/settings" element={<SettingsPage />} />
             <Route path="/help" element={<HelpPage />} />
           </Route>

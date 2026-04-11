@@ -105,7 +105,7 @@ export function BusinessOwnerDashboard() {
             to={`${DEMO_CLIENT_PATH}?tab=analysis`}
             icon={BarChart3}
             title="View Reports"
-            description="See your spending, tax deductions, and trends"
+            description="See your spending patterns and trends"
             accent="bg-violet-50 text-violet-600"
           />
           <QuickActionCard
@@ -140,7 +140,7 @@ export function BusinessOwnerDashboard() {
                 bg="bg-red-50"
               />
               <StatCard
-                label="Tax Deductions Found"
+                label="Categorized Expenses"
                 value={formatCurrency(DEMO_SNAPSHOT.taxDeductions)}
                 icon={Receipt}
                 color="text-violet-600"
@@ -200,7 +200,7 @@ export function BusinessOwnerDashboard() {
               </h2>
               <p className="mt-1 text-sm text-gray-600">
                 Generate a ready-to-send package with all your transactions categorized,
-                tax deductions identified, and reconciliation complete. Your bookkeeper
+                expenses categorized, and reconciliation complete. Your bookkeeper
                 will love you for it — and you'll save hours off their bill.
               </p>
               <div className="mt-4 flex flex-wrap items-center gap-3">
@@ -243,7 +243,7 @@ export function BusinessOwnerDashboard() {
           />
           <ValuePropCard
             icon={Search}
-            text="Finds tax deductions you're missing (scans for commonly missed deductions)"
+            text="Flags categorization issues and potential expense mismatches"
           />
           <ValuePropCard
             icon={ShieldCheck}

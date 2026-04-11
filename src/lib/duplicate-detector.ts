@@ -453,7 +453,7 @@ function calculateGrade(
   if (totalIssues <= 6) {
     return {
       grade: 'C',
-      explanation: `Fair — ${totalIssues} potential issues found. Recommend careful review before filing.`,
+      explanation: `Fair — ${totalIssues} potential issues found. Recommend careful review.`,
     }
   }
   if (totalIssues <= 10) {

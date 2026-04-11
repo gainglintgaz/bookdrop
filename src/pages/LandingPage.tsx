@@ -44,8 +44,8 @@ const features = [
   },
   {
     icon: Brain,
-    title: 'Tax Intelligence',
-    description: 'Surface missed deductions, flag personal expenses mixed with business, and estimate tax impact in real time.',
+    title: 'Smart Document Analysis',
+    description: 'Flag personal expenses mixed with business, surface patterns, and organize documents by category automatically.',
   },
   {
     icon: Camera,
@@ -129,7 +129,7 @@ const soloPricing = [
     description: 'For small businesses doing their own books',
     features: [
       '1 business entity',
-      'Tax estimator (personal + business)',
+      'Financial tracking & reports',
       'Receipt scanner (basic)',
       'Categorization engine',
       'CSV export',

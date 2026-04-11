@@ -13,8 +13,6 @@
 import type { StatementSummary, ParsedTransaction } from './parse-bank-statement'
 import { categorizeTransactions } from './categorization-engine'
 import type { CategorizationReport } from './categorization-engine'
-import { generateTaxIntelligence } from './tax-intelligence'
-import type { TaxIntelligenceReport } from './tax-intelligence'
 import { runAuditChecks } from './duplicate-detector'
 import type { AuditReport } from './duplicate-detector'
 
@@ -213,20 +211,7 @@ export function runFullWorkflow(
   }
   steps.push(catResult.step)
 
-  // Step 3: Tax intelligence
-  const taxResult = runTimedStep<TaxIntelligenceReport>('Tax Deduction Scan', () =>
-    generateTaxIntelligence(mapped, period.year, period.month),
-  )
-  const taxReport = taxResult.result
-  if (taxReport) {
-    const fmt = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' })
-    taxResult.step.resultSummary =
-      `${taxReport.deductions.items.length} deductions found (${fmt.format(taxReport.deductions.totalDeductible)}), ` +
-      `est. savings ${fmt.format(taxReport.deductions.estimatedTaxSavings)}`
-  }
-  steps.push(taxResult.step)
-
-  // Step 4: Audit / duplicate detection
+  // Step 3: Audit / duplicate detection
   const auditResult = runTimedStep<AuditReport>('Duplicate & Anomaly Detection', () =>
     runAuditChecks(mapped),
   )
@@ -244,8 +229,8 @@ export function runFullWorkflow(
   const categorizedCount = catReport?.summary.totalCategorized ?? 0
   const highMedCount = (catReport?.summary.highConfidence ?? 0) + (catReport?.summary.mediumConfidence ?? 0)
   const categorizationRate = categorizedCount > 0 ? highMedCount / categorizedCount : 0
-  const taxDeductionsFound = taxReport?.deductions.items.length ?? 0
-  const taxDeductionAmount = taxReport?.deductions.totalDeductible ?? 0
+  const taxDeductionsFound = 0
+  const taxDeductionAmount = 0
   const duplicatesFound = auditReport?.duplicates.length ?? 0
   const anomaliesFound = auditReport?.unusualTransactions.length ?? 0
 
@@ -266,17 +251,10 @@ export function runFullWorkflow(
   // Collect alerts
   const alerts: string[] = []
   if (duplicatesFound > 0) {
-    alerts.push(`${duplicatesFound} potential duplicate transaction(s) detected -- review before filing`)
+    alerts.push(`${duplicatesFound} potential duplicate transaction(s) detected -- review recommended`)
   }
   if (anomaliesFound > 0) {
     alerts.push(`${anomaliesFound} unusual transaction(s) flagged for review`)
-  }
-  if (taxReport) {
-    for (const alert of taxReport.alerts) {
-      if (alert.severity === 'critical' || alert.severity === 'warning') {
-        alerts.push(alert.title)
-      }
-    }
   }
   if (catReport && catReport.summary.lowConfidence > categorizedCount * 0.3) {
     alerts.push(
@@ -398,7 +376,7 @@ export function getDemoWorkflowResult(): WorkflowResult {
         { category: 'Shipping & Postage', amount: 210, count: 3 },
       ],
       alerts: [
-        '1 potential duplicate transaction(s) detected -- review before filing',
+        '1 potential duplicate transaction(s) detected -- review recommended',
         '2 unusual transaction(s) flagged for review',
         '1099 required for CREATIVE DESIGN CO',
       ],

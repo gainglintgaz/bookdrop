@@ -660,7 +660,7 @@ export function generateYearEndEmail(config: YearEndConfig): EmailTemplate {
   } = config
 
   const netProfit = totalIncome - totalExpenses
-  const subject = `${year} Year-End Summary & Tax Prep for ${clientName}`
+  const subject = `${year} Year-End Summary for ${clientName}`
   const previewText = `Your ${year} totals: ${formatCurrency(totalIncome)} income, ${formatCurrency(totalDeductions)} in deductions, ${vendors1099Count} vendors needing 1099s`
 
   const metricRow = (label: string, value: string, color: string = TEXT_PRIMARY) =>
@@ -699,7 +699,7 @@ export function generateYearEndEmail(config: YearEndConfig): EmailTemplate {
         Hello ${escapeHtml(contactName)},
       </p>
       <p style="margin:16px 0 0 0;font-size:15px;line-height:24px;color:${TEXT_SECONDARY};">
-        As we close out <strong>${year}</strong>, here is a summary of your annual financial activity along with important tax preparation items that need your attention.
+        As we close out <strong>${year}</strong>, here is a summary of your annual financial activity along with important items that need your attention.
       </p>
     `)}</tr>
     <tr>${sectionPadding(`
@@ -725,7 +725,7 @@ export function generateYearEndEmail(config: YearEndConfig): EmailTemplate {
     `)}</tr>` : ''}
     ${actionItems.length > 0 ? `<tr>${sectionPadding(`
       <p style="margin:0 0 12px 0;font-size:13px;font-weight:600;text-transform:uppercase;letter-spacing:0.8px;color:${TEXT_MUTED};">
-        Tax Prep Action Items
+        Year-End Action Items
       </p>
       <table role="presentation" style="width:100%;border:none;border-spacing:0;background-color:${BG_BODY};border-radius:8px;overflow:hidden;">
         ${actionItemsList}
@@ -767,7 +767,7 @@ export function generateYearEndEmail(config: YearEndConfig): EmailTemplate {
       : []),
     ...(actionItems.length > 0
       ? [
-          '--- TAX PREP ACTION ITEMS ---',
+          '--- YEAR-END ACTION ITEMS ---',
           ...actionItems.map((item, i) => `  ${i + 1}. ${item}`),
           '',
         ]

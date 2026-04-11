@@ -183,7 +183,7 @@ export function InsightsPanel({ insights }: InsightsPanelProps) {
         <div>
           <h4 className="mb-3 flex items-center gap-2 text-sm font-semibold text-gray-700">
             <Lightbulb className="h-4 w-4 text-primary" />
-            Insights & Advice
+            Observations
           </h4>
           <div className="space-y-2">
             {advice.map(a => (
