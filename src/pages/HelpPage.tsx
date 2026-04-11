@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { cn } from '@/lib/utils'
 import {
   ChevronDown, ChevronRight, Upload, FileText, Bell,
-  Archive, BarChart3, Calculator, Camera, User,
+  Archive, BarChart3, Camera, User,
 } from 'lucide-react'
 
 interface Section {
@@ -94,23 +94,11 @@ const sections: Section[] = [
         </ol>
         <ul className="list-disc space-y-1 pl-8">
           <li><strong>Auto-Categorization:</strong> sorts transactions into IRS categories</li>
-          <li><strong>Tax Intelligence:</strong> flags deductions and business/personal mix-ups</li>
+          <li><strong>Smart Analysis:</strong> flags business/personal mix-ups and unusual transactions</li>
           <li><strong>Cash Flow Forecast:</strong> projects next month's cash position</li>
           <li><strong>Trends:</strong> month-over-month spending patterns</li>
           <li><strong>Export:</strong> QuickBooks, Xero, CSV formats</li>
         </ul>
-      </div>
-    ),
-  },
-  {
-    title: 'Tax Estimator',
-    icon: Calculator,
-    content: (
-      <div className="space-y-2 text-sm text-gray-700">
-        <p>Click <strong>Tax Estimator</strong> in the sidebar.</p>
-        <p>Choose Personal (W-2/investment income) or Business (Schedule C/S-Corp).</p>
-        <p>Fill in the fields — calculations update in real time.</p>
-        <p>All math runs in your browser. No data is sent anywhere.</p>
       </div>
     ),
   },
@@ -135,7 +123,7 @@ const sections: Section[] = [
           <li>Your sidebar shows "My Business" instead of "Clients"</li>
           <li>Click "My Business" to see your own analysis dashboard</li>
           <li>Upload your own bank statements, receipts, and documents</li>
-          <li>Use the Tax Estimator, Receipt Scanner, and all analysis tools</li>
+          <li>Use the Receipt Scanner and all analysis tools</li>
           <li>Everything works the same — you're both the bookkeeper and the client</li>
         </ul>
       </div>

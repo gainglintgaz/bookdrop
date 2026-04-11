@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react'
-import { useParams, Link } from 'react-router-dom'
+import { useParams, Link, useSearchParams } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
 import { isDemoMode } from '@/lib/mode'
 import { getDemoClient, getDemoRequirementsWithUploads, getDemoReminderLogs } from '@/lib/demo-data'
@@ -66,6 +66,7 @@ const TABS: { id: TabId; label: string; icon: typeof FileText }[] = [
 
 export function ClientDetailPage() {
   const { clientId } = useParams<{ clientId: string }>()
+  const [searchParams] = useSearchParams()
   const [client, setClient] = useState<Client | null>(null)
   const [requirements, setRequirements] = useState<RequirementWithUploads[]>([])
   const [reminderLog, setReminderLog] = useState<ReminderLog[]>([])
@@ -85,7 +86,10 @@ export function ClientDetailPage() {
   const [auditReport, setAuditReport] = useState<AuditReport | null>(null)
   const [trendReport, setTrendReport] = useState<TrendReport | null>(null)
   const [policyReport, setPolicyReport] = useState<PolicyReport | null>(null)
-  const [activeTab, setActiveTab] = useState<TabId>('documents')
+  const initialTab = (['documents', 'analysis', 'activity', 'export'] as TabId[]).includes(searchParams.get('tab') as TabId)
+    ? (searchParams.get('tab') as TabId)
+    : 'documents'
+  const [activeTab, setActiveTab] = useState<TabId>(initialTab)
   const [workflowResult, setWorkflowResult] = useState<WorkflowResult | null>(null)
   const [showMessages, setShowMessages] = useState(false)
   const [nudge, setNudge] = useState<string | null>(null)
