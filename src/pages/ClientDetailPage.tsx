@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, lazy, Suspense } from 'react'
 import { useParams, Link, useSearchParams } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
 import { isDemoMode } from '@/lib/mode'
@@ -18,29 +18,28 @@ import { tenantConfig } from '@/lib/tenant.config'
 import { generateUploadDeadlineICS, getNextDeadline } from '@/lib/calendar'
 import { exportMonthCSV, copyTeamsSummary } from '@/lib/export-csv'
 import { runCompletenessChecks } from '@/lib/completeness-check'
-import { getDemoReconciliation, reconcileFromParsedStatements, type ReconciliationResult } from '@/lib/reconciliation'
-import { ActivityTimeline } from '@/components/practitioner/ActivityTimeline'
-import { generateBookkeeperPackage } from '@/lib/finance-prep'
+import type { ReconciliationResult } from '@/lib/reconciliation'
 import { useAccountType } from '@/hooks/useAccountType'
-import { StatementParserPanel } from '@/components/practitioner/StatementParserPanel'
-import { InsightsPanel } from '@/components/practitioner/InsightsPanel'
-import { CashFlowForecastPanel } from '@/components/practitioner/CashFlowForecastPanel'
-import { AuditReportPanel } from '@/components/practitioner/AuditReportPanel'
-import { WorkflowResultPanel } from '@/components/practitioner/WorkflowResultPanel'
-import { CategorizationPanel } from '@/components/practitioner/CategorizationPanel'
-import { getDemoWorkflowResult, type WorkflowResult } from '@/lib/workflow-engine'
-import { generateInsights, generateClientReport, type MonthlyInsights } from '@/lib/insights'
-import { categorizeTransactions, type CategorizationReport } from '@/lib/categorization-engine'
-import { generateCashFlowForecast, type CashFlowForecast } from '@/lib/cash-flow-forecast'
-import { runAuditChecks, type AuditReport } from '@/lib/duplicate-detector'
-import { analyzeTrends, type TrendReport } from '@/lib/trend-analysis'
-import { checkExpensePolicy, type PolicyReport } from '@/lib/expense-policy'
-import { generateMeetingAgenda, downloadAgendaAsHTML } from '@/lib/meeting-agenda'
-import { exportQuickBooksIIF, exportQBOCSV, exportXeroCSV, exportJournalEntries, exportOFX } from '@/lib/export-qb'
-import { TrendAnalysisPanel } from '@/components/practitioner/TrendAnalysisPanel'
-import { ExpensePolicyPanel } from '@/components/practitioner/ExpensePolicyPanel'
-import { ReceiptScannerPanel } from '@/components/practitioner/ReceiptScannerPanel'
-import { MessagePanel } from '@/components/shared/MessagePanel'
+import type { WorkflowResult } from '@/lib/workflow-engine'
+import type { MonthlyInsights } from '@/lib/insights'
+import type { CategorizationReport } from '@/lib/categorization-engine'
+import type { CashFlowForecast } from '@/lib/cash-flow-forecast'
+import type { AuditReport } from '@/lib/duplicate-detector'
+import type { TrendReport } from '@/lib/trend-analysis'
+import type { PolicyReport } from '@/lib/expense-policy'
+
+// Lazy-loaded panel components — split into separate chunks
+const StatementParserPanel = lazy(() => import('@/components/practitioner/StatementParserPanel').then(m => ({ default: m.StatementParserPanel })))
+const InsightsPanel = lazy(() => import('@/components/practitioner/InsightsPanel').then(m => ({ default: m.InsightsPanel })))
+const CashFlowForecastPanel = lazy(() => import('@/components/practitioner/CashFlowForecastPanel').then(m => ({ default: m.CashFlowForecastPanel })))
+const AuditReportPanel = lazy(() => import('@/components/practitioner/AuditReportPanel').then(m => ({ default: m.AuditReportPanel })))
+const WorkflowResultPanel = lazy(() => import('@/components/practitioner/WorkflowResultPanel').then(m => ({ default: m.WorkflowResultPanel })))
+const CategorizationPanel = lazy(() => import('@/components/practitioner/CategorizationPanel').then(m => ({ default: m.CategorizationPanel })))
+const TrendAnalysisPanel = lazy(() => import('@/components/practitioner/TrendAnalysisPanel').then(m => ({ default: m.TrendAnalysisPanel })))
+const ExpensePolicyPanel = lazy(() => import('@/components/practitioner/ExpensePolicyPanel').then(m => ({ default: m.ExpensePolicyPanel })))
+const ReceiptScannerPanel = lazy(() => import('@/components/practitioner/ReceiptScannerPanel').then(m => ({ default: m.ReceiptScannerPanel })))
+const ActivityTimeline = lazy(() => import('@/components/practitioner/ActivityTimeline').then(m => ({ default: m.ActivityTimeline })))
+const MessagePanel = lazy(() => import('@/components/shared/MessagePanel').then(m => ({ default: m.MessagePanel })))
 import { checkAndFireTrigger, TRIGGER_FIRST_ZIP, TRIGGER_FIRST_REMINDER } from '@/lib/engagement-triggers'
 import { fetchEngagementLetters, uploadEngagementLetter } from '@/lib/db'
 import type { EngagementLetterWithSignature } from '@/types'
@@ -363,18 +362,16 @@ export function ClientDetailPage() {
       )}
 
       {activeTab === 'analysis' && (
+        <Suspense fallback={<div className="py-12 text-center"><LoadingSpinner size="lg" /></div>}>
         <AnalysisTab
           requirements={requirements}
           client={client}
           period={period}
           parsedStatements={parsedStatements}
-          onStatementsParsed={(stmts) => {
+          onStatementsParsed={async (stmts) => {
             setParsedStatements(stmts)
             // Auto-run ALL intelligence engines when statements are parsed
             if (stmts.length > 0) {
-              setInsights(generateInsights(stmts, period.year, period.month))
-              // Flatten all transactions for the engines
-              // Map ParsedTransaction to typed transactions for engines
               const allTxns = stmts.flatMap(s => s.transactions).map(t => ({
                 date: t.date,
                 description: t.description,
@@ -382,20 +379,31 @@ export function ClientDetailPage() {
                 type: (t.amount >= 0 ? 'credit' : 'debit') as 'credit' | 'debit',
                 category: t.category,
               }))
-              setCategorizationReport(categorizeTransactions(allTxns))
-              setCashForecast(generateCashFlowForecast(stmts, period.year, period.month))
-              setAuditReport(runAuditChecks(allTxns))
-              setTrendReport(analyzeTrends(stmts))
-              setPolicyReport(checkExpensePolicy(allTxns))
+              // Dynamic imports — keeps these libs out of the main chunk
+              const [insightsMod, catMod, cfMod, auditMod, trendMod, policyMod] = await Promise.all([
+                import('@/lib/insights'),
+                import('@/lib/categorization-engine'),
+                import('@/lib/cash-flow-forecast'),
+                import('@/lib/duplicate-detector'),
+                import('@/lib/trend-analysis'),
+                import('@/lib/expense-policy'),
+              ])
+              setInsights(insightsMod.generateInsights(stmts, period.year, period.month))
+              setCategorizationReport(catMod.categorizeTransactions(allTxns))
+              setCashForecast(cfMod.generateCashFlowForecast(stmts, period.year, period.month))
+              setAuditReport(auditMod.runAuditChecks(allTxns))
+              setTrendReport(trendMod.analyzeTrends(stmts))
+              setPolicyReport(policyMod.checkExpensePolicy(allTxns))
             }
           }}
           reconResult={reconResult}
-          onRunReconciliation={() => {
+          onRunReconciliation={async () => {
+            const reconMod = await import('@/lib/reconciliation')
             if (parsedStatements.length > 0) {
-              const result = reconcileFromParsedStatements(parsedStatements, requirements)
-              setReconResult(result ?? getDemoReconciliation())
+              const result = reconMod.reconcileFromParsedStatements(parsedStatements, requirements)
+              setReconResult(result ?? reconMod.getDemoReconciliation())
             } else {
-              setReconResult(getDemoReconciliation())
+              setReconResult(reconMod.getDemoReconciliation())
             }
           }}
           insights={insights}
@@ -407,14 +415,17 @@ export function ClientDetailPage() {
           workflowResult={workflowResult}
           onSetWorkflowResult={setWorkflowResult}
         />
+        </Suspense>
       )}
 
       {activeTab === 'activity' && (
+        <Suspense fallback={<div className="py-12 text-center"><LoadingSpinner size="lg" /></div>}>
         <ActivityTimeline
           requirements={requirements}
           reminderLog={reminderLog}
           clientName={client.business_name}
         />
+        </Suspense>
       )}
 
       {activeTab === 'export' && (
@@ -451,12 +462,14 @@ export function ClientDetailPage() {
             onClick={() => setShowMessages(false)}
           />
           <div className="fixed right-0 top-0 bottom-0 z-50 w-96 shadow-xl">
+            <Suspense fallback={<div className="flex h-full items-center justify-center"><LoadingSpinner size="lg" /></div>}>
             <MessagePanel
               clientId={clientId ?? ''}
               clientName={client.business_name}
               senderType="bookkeeper"
               onClose={() => setShowMessages(false)}
             />
+            </Suspense>
           </div>
         </>
       )}
@@ -748,7 +761,7 @@ function AnalysisTab({
       )}
       {!workflowResult && hasParsed && (
         <button
-          onClick={() => onSetWorkflowResult(getDemoWorkflowResult())}
+          onClick={async () => { const m = await import('@/lib/workflow-engine'); onSetWorkflowResult(m.getDemoWorkflowResult()) }}
           className="flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-700"
         >
           <Zap className="h-4 w-4" />
@@ -924,8 +937,9 @@ function AnalysisTab({
           </div>
           <div className="rounded-lg border border-gray-200 bg-white p-6">
             <button
-              onClick={() => {
-                const agenda = generateMeetingAgenda({
+              onClick={async () => {
+                const m = await import('@/lib/meeting-agenda')
+                const agenda = m.generateMeetingAgenda({
                   clientName: client.business_name,
                   bookkeeperName: 'Bookkeeper',
                   year: period.year,
@@ -941,7 +955,7 @@ function AnalysisTab({
                   recommendations: insights?.advice.map(a => a.title),
                   forecastAlerts: cashForecast?.alerts.map(a => ({ title: a.title, detail: a.detail })),
                 })
-                downloadAgendaAsHTML(agenda)
+                m.downloadAgendaAsHTML(agenda)
               }}
               className="flex items-center gap-2 rounded-md bg-primary px-5 py-3 text-sm font-medium text-white hover:bg-primary-light"
             >
@@ -997,7 +1011,7 @@ function ExportTab({
               </p>
             </div>
             <button
-              onClick={() => generateClientReport(insights, client.business_name, bookkeeperName)}
+              onClick={async () => { const m = await import('@/lib/insights'); m.generateClientReport(insights, client.business_name, bookkeeperName) }}
               className="flex items-center gap-1.5 rounded-md bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-light"
             >
               <FileBarChart className="h-4 w-4" />
@@ -1019,8 +1033,9 @@ function ExportTab({
             </p>
           </div>
           <button
-            onClick={() => {
-              generateBookkeeperPackage({
+            onClick={async () => {
+              const m = await import('@/lib/finance-prep')
+              m.generateBookkeeperPackage({
                 businessName: client.business_name,
                 contactName: client.contact_name ?? '',
                 year: period.year,
@@ -1071,12 +1086,18 @@ function ExportTab({
                 amount: Math.abs(t.amount), type: (t.amount >= 0 ? 'credit' : 'debit') as 'credit' | 'debit',
                 category: t.category,
               }))
+              const lazyExport = (method: string) => async () => {
+                const m = await import('@/lib/export-qb')
+                const fn = m[method as keyof typeof m] as (...args: unknown[]) => void
+                if (method === 'exportOFX') fn(txns, 'Checking', client.business_name)
+                else fn(txns, client.business_name)
+              }
               return [
-              { label: 'QuickBooks IIF', fn: () => exportQuickBooksIIF(txns, client.business_name), icon: BookOpen },
-              { label: 'QBO Online CSV', fn: () => exportQBOCSV(txns, client.business_name), icon: Table },
-              { label: 'Xero CSV', fn: () => exportXeroCSV(txns, client.business_name), icon: Table },
-              { label: 'Journal Entries', fn: () => exportJournalEntries(txns, client.business_name), icon: FileText },
-              { label: 'OFX (Bank)', fn: () => exportOFX(txns, 'Checking', client.business_name), icon: Download },
+              { label: 'QuickBooks IIF', fn: lazyExport('exportQuickBooksIIF'), icon: BookOpen },
+              { label: 'QBO Online CSV', fn: lazyExport('exportQBOCSV'), icon: Table },
+              { label: 'Xero CSV', fn: lazyExport('exportXeroCSV'), icon: Table },
+              { label: 'Journal Entries', fn: lazyExport('exportJournalEntries'), icon: FileText },
+              { label: 'OFX (Bank)', fn: lazyExport('exportOFX'), icon: Download },
             ]})().map(exp => (
               <button
                 key={exp.label}
