@@ -156,7 +156,9 @@ function buildClientWithStatus(client: Client): ClientWithStatus {
 // ─── EXPORTED DEMO API ──────────────────────────────────────────────────────
 
 export function getDemoClients(): ClientWithStatus[] {
-  return demoClients.map(buildClientWithStatus)
+  return demoClients
+    .filter(c => c.bookkeeper_id === demoBookkeeper.id)
+    .map(buildClientWithStatus)
 }
 
 export function getDemoClient(clientId: string): ClientWithStatus | null {
