@@ -326,6 +326,9 @@ export function ClientDetailPage() {
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
               title={tab.label}
+              aria-label={tab.label}
+              role="tab"
+              aria-selected={activeTab === tab.id}
               className={cn(
                 'flex items-center gap-2 border-b-2 px-2 pb-3 text-sm font-medium transition-colors sm:px-1',
                 activeTab === tab.id
@@ -611,6 +614,7 @@ function DocumentsTab({
           <div className="flex items-center gap-2">
             <input
               type="text"
+              aria-label="Engagement letter label"
               placeholder="Label (e.g. 2026 Engagement Letter)"
               value={letterLabel}
               onChange={e => setLetterLabel(e.target.value)}

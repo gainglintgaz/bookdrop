@@ -596,6 +596,7 @@ function ClientRow({ client }: { client: ClientWithStatus }) {
             onClick={handleCopyLink}
             className="rounded-md p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors"
             title="Copy portal link"
+            aria-label="Copy portal link"
           >
             <Copy className="h-4 w-4" />
           </button>
@@ -604,6 +605,7 @@ function ClientRow({ client }: { client: ClientWithStatus }) {
             onClick={e => e.stopPropagation()}
             className="rounded-md p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors"
             title="View details"
+            aria-label={`View details for ${client.business_name}`}
           >
             <Eye className="h-4 w-4" />
           </Link>
@@ -619,6 +621,7 @@ function ClientRow({ client }: { client: ClientWithStatus }) {
                   : 'text-gray-400 hover:bg-gray-100 hover:text-gray-600',
             )}
             title={sent ? 'Reminder sent!' : client.submissionStatus === 'complete' ? 'All docs submitted' : 'Send reminder'}
+            aria-label={sent ? 'Reminder sent' : client.submissionStatus === 'complete' ? 'All docs submitted' : 'Send reminder'}
           >
             {sending ? <LoadingSpinner size="sm" /> : sent ? <CheckCircle className="h-4 w-4" /> : <Send className="h-4 w-4" />}
           </button>

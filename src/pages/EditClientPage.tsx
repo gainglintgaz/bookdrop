@@ -263,12 +263,14 @@ export function EditClientPage() {
                   onChange={e => updateRequirement(req.key, 'label', e.target.value)}
                   className={cn(inputClasses, 'mt-0')}
                   placeholder={`Document ${index + 1} label`}
+                  aria-label={`Document ${index + 1} label`}
                 />
                 <div className="flex items-center gap-3">
                   <select
                     value={req.doc_type}
                     onChange={e => updateRequirement(req.key, 'doc_type', e.target.value)}
                     className="rounded-md border border-gray-300 px-2 py-1 text-xs"
+                    aria-label={`Document ${index + 1} type`}
                   >
                     <option value="bank">Bank Statement</option>
                     <option value="credit_card">Credit Card</option>
@@ -292,7 +294,7 @@ export function EditClientPage() {
                   </label>
                 </div>
               </div>
-              <button type="button" onClick={() => removeRequirement(req.key)} className="mt-2 rounded p-1 text-gray-400 hover:bg-gray-200 hover:text-danger">
+              <button type="button" onClick={() => removeRequirement(req.key)} className="mt-2 rounded p-1 text-gray-400 hover:bg-gray-200 hover:text-danger" aria-label={`Remove document ${index + 1}`}>
                 <Trash2 className="h-4 w-4" />
               </button>
             </div>
