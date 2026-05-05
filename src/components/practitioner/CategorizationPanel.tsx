@@ -2,12 +2,51 @@
 // Displays auto-categorized transactions with confidence levels, tax deductions, and flags.
 
 import { cn } from '@/lib/utils'
-import type { CategorizationReport } from '@/lib/categorization-engine'
+import type { CategorizationReport, CategorizedTransaction } from '@/lib/categorization-engine'
 import {
   CheckCircle, Tag, Receipt,
   DollarSign, Flag, Filter, ChevronDown,
 } from 'lucide-react'
 import { useState } from 'react'
+import { Provenance } from '@/components/shared/Provenance'
+import type { ProvenanceData } from '@/types/provenance'
+
+/**
+ * Build provenance metadata for a categorized transaction.
+ * Engine output today is decorative (category + confidence label) — this adapter
+ * turns each CategorizedTransaction into auditable evidence per
+ * .claude/rules/ai-first-principles.md §5 anti-fabrication.
+ */
+function categorizationProvenance(t: CategorizedTransaction): ProvenanceData {
+  if (t.matchedVendor) {
+    return {
+      type: 'rule',
+      summary: `Matched vendor rule: "${t.matchedVendor}"`,
+      detail: `Transaction description matched a known vendor pattern. Auto-categorized as "${t.category}"${t.subcategory ? ` / ${t.subcategory}` : ''}.`,
+      confidence: t.confidence,
+      citations: [
+        { label: `Vendor: ${t.matchedVendor}`, meta: t.cleanedDescription },
+      ],
+    }
+  }
+  if (t.category === 'Uncategorized' || t.confidence === 'low') {
+    return {
+      type: 'baseline',
+      summary: 'No matching rule — flagged for manual review',
+      detail: 'No vendor rule, learned correction, or pattern match fired. Categorize manually to teach the system.',
+      confidence: 'low',
+    }
+  }
+  return {
+    type: 'computed',
+    summary: `Pattern match → "${t.category}"`,
+    detail: `Categorized using description heuristics (no exact vendor match). Confidence: ${t.confidence}.`,
+    confidence: t.confidence,
+    citations: [
+      { label: `Original: ${t.originalDescription}` },
+    ],
+  }
+}
 
 interface Props {
   report: CategorizationReport
@@ -133,7 +172,10 @@ export function CategorizationPanel({ report }: Props) {
                     )}
                   </td>
                   <td className="px-4 py-2.5">
-                    <span className="text-gray-700">{t.category}</span>
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-gray-700">{t.category}</span>
+                      <Provenance data={categorizationProvenance(t)} variant="icon-only" />
+                    </div>
                     {t.subcategory && (
                       <p className="text-[10px] text-gray-400">{t.subcategory}</p>
                     )}

@@ -3,11 +3,37 @@
 // cash flow, spending categories, top vendors, anomalies, advice.
 
 import { cn } from '@/lib/utils'
-import type { MonthlyInsights } from '@/lib/insights'
+import type { MonthlyInsights, Anomaly, SmartAdvice } from '@/lib/insights'
 import {
   TrendingUp, TrendingDown, DollarSign, AlertTriangle, Lightbulb,
   ShoppingCart, Building2, Repeat, CircleDot,
 } from 'lucide-react'
+import { Provenance } from '@/components/shared/Provenance'
+import type { ProvenanceData } from '@/types/provenance'
+
+/** Adapter: explain why this anomaly was flagged. */
+function anomalyProvenance(a: Anomaly): ProvenanceData {
+  const txn = a.transaction
+  return {
+    type: 'computed',
+    summary: `Anomaly type: ${a.type}`,
+    detail: a.detail,
+    confidence: a.severity === 'critical' ? 'high' : 'medium',
+    citations: txn
+      ? [{ label: `${txn.date} — ${txn.description}`, meta: `$${Math.abs(txn.amount).toFixed(2)}` }]
+      : undefined,
+  }
+}
+
+/** Adapter: explain how this observation was derived. */
+function adviceProvenance(a: SmartAdvice): ProvenanceData {
+  return {
+    type: 'computed',
+    summary: `Observation derived from ${a.category} signals`,
+    detail: a.description,
+    confidence: a.impact === 'high' ? 'high' : a.impact === 'medium' ? 'medium' : 'low',
+  }
+}
 
 interface InsightsPanelProps {
   insights: MonthlyInsights
@@ -169,7 +195,10 @@ export function InsightsPanel({ insights }: InsightsPanelProps) {
                   'text-gray-400',
                 )} />
                 <div>
-                  <p className="text-sm font-medium text-gray-900">{a.title}</p>
+                  <div className="flex items-center gap-1.5">
+                    <p className="text-sm font-medium text-gray-900">{a.title}</p>
+                    <Provenance data={anomalyProvenance(a)} variant="icon-only" />
+                  </div>
                   <p className="mt-0.5 text-xs text-gray-600">{a.detail}</p>
                 </div>
               </div>
@@ -207,6 +236,7 @@ export function InsightsPanel({ insights }: InsightsPanelProps) {
                     {a.category}
                   </span>
                   <p className="text-sm font-medium text-gray-900">{a.title}</p>
+                  <Provenance data={adviceProvenance(a)} variant="icon-only" />
                 </div>
                 <p className="mt-1 text-xs leading-relaxed text-gray-600">{a.description}</p>
               </div>

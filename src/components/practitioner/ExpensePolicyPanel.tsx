@@ -2,12 +2,28 @@
 // Displays expense policy compliance check results.
 
 import { cn } from '@/lib/utils'
-import type { PolicyReport } from '@/lib/expense-policy'
+import type { PolicyReport, PolicyViolation } from '@/lib/expense-policy'
 import { downloadPolicyReport } from '@/lib/expense-policy'
 import {
   ShieldCheck, AlertTriangle, CheckCircle, XCircle,
   Download,
 } from 'lucide-react'
+import { Provenance } from '@/components/shared/Provenance'
+import type { ProvenanceData } from '@/types/provenance'
+
+/** Adapter: explain which policy rule fired for this violation. */
+function violationProvenance(v: PolicyViolation): ProvenanceData {
+  return {
+    type: 'rule',
+    summary: `Rule fired: ${v.ruleName}`,
+    detail: v.explanation,
+    confidence: v.severity === 'critical' ? 'high' : 'medium',
+    citations: [
+      { label: `Rule ID: ${v.ruleId}`, meta: v.ruleName },
+      { label: `Transaction: ${v.transactionDescription}`, meta: `${v.transactionDate} · $${v.transactionAmount.toFixed(2)}` },
+    ],
+  }
+}
 
 interface Props {
   report: PolicyReport
@@ -110,7 +126,10 @@ export function ExpensePolicyPanel({ report, businessName }: Props) {
                       <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-gray-400" />
                     )}
                     <div>
-                      <p className="text-sm text-gray-900">{v.transactionDate} — {v.transactionDescription}</p>
+                      <div className="flex items-center gap-1.5">
+                        <p className="text-sm text-gray-900">{v.transactionDate} — {v.transactionDescription}</p>
+                        <Provenance data={violationProvenance(v)} variant="icon-only" />
+                      </div>
                       <p className="mt-0.5 text-xs text-gray-500">{v.explanation}</p>
                       <p className="mt-1 text-xs font-medium text-primary">{v.recommendation}</p>
                     </div>

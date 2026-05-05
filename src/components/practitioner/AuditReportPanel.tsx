@@ -2,11 +2,61 @@
 // Displays duplicate detection, missing recurring items, unusual transactions, data quality grade.
 
 import { cn } from '@/lib/utils'
-import type { AuditReport } from '@/lib/duplicate-detector'
+import type {
+  AuditReport,
+  DuplicateGroup,
+  MissingRecurringItem,
+  UnusualTransaction,
+} from '@/lib/duplicate-detector'
 import {
   AlertTriangle, CheckCircle, Copy, Clock,
   XCircle, TrendingUp, AlertOctagon,
 } from 'lucide-react'
+import { Provenance } from '@/components/shared/Provenance'
+import type { ProvenanceData } from '@/types/provenance'
+
+/** Adapter: explain why this duplicate group was flagged. */
+function duplicateProvenance(d: DuplicateGroup): ProvenanceData {
+  return {
+    type: 'rule',
+    summary: 'Duplicate detection rule fired',
+    detail: d.reason,
+    confidence: d.confidence,
+    citations: d.transactions.map((t, idx) => ({
+      label: `Txn ${idx + 1}: ${t.description}`,
+      meta: `${t.date} · $${Math.abs(t.amount).toFixed(2)}`,
+    })),
+  }
+}
+
+/** Adapter: explain why this recurring item is missing. */
+function missingRecurringProvenance(m: MissingRecurringItem): ProvenanceData {
+  return {
+    type: 'computed',
+    summary: `Missing expected recurring "${m.description}"`,
+    detail: `Recurring detection looked for a transaction matching this vendor near ${m.expectedDate}. Last seen on ${m.lastSeen}.`,
+    confidence: m.severity === 'critical' ? 'high' : 'medium',
+    formula: 'recurringDetector(vendor, cycleDays=25..32, lastSeenDate)',
+    citations: [
+      { label: `Vendor pattern: ${m.description}`, meta: `Last seen: ${m.lastSeen}` },
+    ],
+  }
+}
+
+/** Adapter: explain why this transaction is unusual. */
+function unusualProvenance(t: UnusualTransaction): ProvenanceData {
+  return {
+    type: 'computed',
+    summary: `Unusual amount for "${t.description}"`,
+    detail: `Z-score = ${t.zScore.toFixed(2)} (this transaction is ${t.zScore.toFixed(1)} standard deviations from this vendor's average of $${t.averageAmount.toFixed(2)}).`,
+    confidence: t.severity === 'critical' ? 'high' : 'medium',
+    formula: '(amount − vendorMean) / vendorStdDev',
+    citations: [
+      { label: `Vendor mean: $${t.averageAmount.toFixed(2)}` },
+      { label: `This txn: $${Math.abs(t.amount).toFixed(2)}`, meta: t.date },
+    ],
+  }
+}
 
 interface Props {
   report: AuditReport
@@ -64,12 +114,15 @@ export function AuditReportPanel({ report }: Props) {
             {duplicates.map((dup, i) => (
               <div key={i} className="rounded-lg border border-danger/20 bg-white p-4">
                 <div className="mb-2 flex items-center justify-between">
-                  <span className={cn(
-                    'rounded-full px-2 py-0.5 text-[10px] font-medium',
-                    dup.confidence === 'high' ? 'bg-danger/10 text-danger' : 'bg-warning/10 text-warning',
-                  )}>
-                    {dup.confidence} confidence
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <span className={cn(
+                      'rounded-full px-2 py-0.5 text-[10px] font-medium',
+                      dup.confidence === 'high' ? 'bg-danger/10 text-danger' : 'bg-warning/10 text-warning',
+                    )}>
+                      {dup.confidence} confidence
+                    </span>
+                    <Provenance data={duplicateProvenance(dup)} />
+                  </div>
                   <span className="text-xs font-medium text-danger">${dup.totalAmount.toFixed(2)} at risk</span>
                 </div>
                 <div className="space-y-1">
@@ -111,7 +164,10 @@ export function AuditReportPanel({ report }: Props) {
                 )}
                 <div className="flex-1">
                   <div className="flex items-center justify-between">
-                    <p className="text-sm font-medium text-gray-900">{item.description}</p>
+                    <div className="flex items-center gap-1.5">
+                      <p className="text-sm font-medium text-gray-900">{item.description}</p>
+                      <Provenance data={missingRecurringProvenance(item)} variant="icon-only" />
+                    </div>
                     <span className="text-sm font-medium text-gray-600">${item.expectedAmount.toFixed(2)}</span>
                   </div>
                   <p className="mt-0.5 text-xs text-gray-500">
@@ -137,7 +193,10 @@ export function AuditReportPanel({ report }: Props) {
               <div key={i} className="rounded-lg border border-primary/20 bg-white px-4 py-3">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm font-medium text-gray-900">{t.date} — {t.description}</p>
+                    <div className="flex items-center gap-1.5">
+                      <p className="text-sm font-medium text-gray-900">{t.date} — {t.description}</p>
+                      <Provenance data={unusualProvenance(t)} variant="icon-only" />
+                    </div>
                     <p className="mt-0.5 text-xs text-gray-500">{t.reason}</p>
                   </div>
                   <div className="text-right">
