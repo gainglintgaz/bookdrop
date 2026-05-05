@@ -90,6 +90,10 @@ All suggestions require Victor's approval before committing.
 - [ ] Bundle size acceptable
 - [ ] Known issues ranked by severity
 - [ ] Launch Verification Checklist passed
+- [ ] Pre-launch bug checklist run (`.claude/rules/bug-checklist.md` — 13 patterns)
+- [ ] AI-first audit passed (`.claude/rules/ai-first-principles.md` §2 — at least 3 of 5 questions PASS, no critical FAIL on Q1 or Q2)
+- [ ] Data flywheel worksheet up to date (`DATA_FLYWHEEL.md` — §B audit verdict reflects current state, gating states declared per AI feature)
+- [ ] **Live verification mandatory after deploy** — code review, `tsc=0`, and "build succeeded" are NOT proof a feature works in production. Within 5 minutes of every push to main, manually trigger one end-to-end flow against the live URL: signup → action → DB query → result. Confirm the row exists in the live DB. Confirm Edge Functions are listed via `supabase functions list`. Confirm crons return 200 not 401/404 when manually invoked. Wait 24h, then check logs for at least one successful auto-run. The aggregate-rebuilder bug (FinKeel 2026-05-05: cron firing into a 404 for weeks because the Edge Function was never deployed, while every audit said "code looks correct") is the canonical example. **Code-review alone cannot detect this class of bug.** Document the live-verification result in the PR description: which URL was tested, what action was triggered, what DB row was confirmed, what timestamp.
 
 ## Standard Prompt Anatomy
 Every prompt MUST contain these 4 blocks:

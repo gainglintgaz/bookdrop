@@ -1,0 +1,200 @@
+# Pre-Launch Bug Checklist (13 patterns FinKeel hit, BookDrop must check)
+Source: `bookdrop-knowledge-transfer-from-finkeel.md` §11 (2026-05-05)
+
+Run these greps before every release. Each pattern is a known bug shape from FinKeel V1 with a BookDrop-specific equivalent. If a grep returns hits, review every result — don't assume the pattern is benign.
+
+**How to use:** before shipping any feature touching financial calculations, document parsing, or scheduled work, run the full checklist. Document hits in `errors-fixed.json` (even if "false positive — confirmed correct on review").
+
+---
+
+## Bug 1 — Source-doc YTD/period-totals dropped on upload
+**FinKeel shape:** Paystub YTD silently dropped on upload despite schema support (write path stored, read path didn't return it).
+**BookDrop equivalent:** Period-totals dropped from payroll registers, GL exports, trial balance — schema has the column, parser stores it, but UI never reads it.
+**Grep:**
+```bash
+# Find all schema columns that store period/YTD totals
+grep -rn "ytd_\|period_total\|cumulative_\|year_to_date" src/ supabase/migrations/
+
+# For each result, verify both write path AND read path use the column
+# If schema has it but only one path uses it = silent data drop
+```
+**Severity:** HIGH (CPA cannot reconcile to source)
+
+---
+
+## Bug 2 — Tax/effective rate hardcoded
+**FinKeel shape:** Marginal rate hardcoded `22%`/`12%` (no MFJ, no state, no actual brackets).
+**BookDrop equivalent:** Any "default tax rate" in client tax-planning calcs — every client has different filing status and bracket; never hardcode.
+**Grep:**
+```bash
+grep -rn "0\.22\|0\.12\|0\.32\|effectiveTaxRate\s*=\s*[0-9]" src/
+grep -rn "marginalRate\|taxRate" src/ | grep -v "fromBrackets\|computeRate"
+```
+**Severity:** CRITICAL — gives wrong numbers to a paying CPA = malpractice exposure
+
+---
+
+## Bug 3 — Statutory limits hardcoded with stale value
+**FinKeel shape:** SS wage base hardcoded `$168,600` for 2026 (correct value: `$181,800`) — undertaxes by $2,019/yr.
+**BookDrop equivalent:** Any of: SS wage base, HSA caps, IRA caps, SEP-IRA cap (25%/$70K), 401k limit ($23.5K + $7.5K catchup), Section 179 cap ($1.16M for 2026), mileage rate (67¢ for 2026).
+**Grep:**
+```bash
+grep -rn "168\|181_800\|168_600\|181800\|168600\|23000\|23500\|7000\|7500\|66000\|69000\|70000\|1160000\|0\.67" src/
+# Plus a generic catch:
+grep -rn "wage_base\|wageBase\|sec179\|ira_cap\|hsa_cap\|four_oh_one_k_cap" src/
+```
+**Severity:** CRITICAL (these change yearly — must read from a year-keyed table, never inline)
+
+---
+
+## Bug 4 — Default tax rate baked into a feature
+**FinKeel shape:** Gig effective tax rate hardcoded `12%` across 2 files.
+**BookDrop equivalent:** Any per-feature "estimated tax rate" — utilization estimates, withholding suggestions, quarterly-tax projections.
+**Grep:**
+```bash
+grep -rn "rate.*12\|rate.*22\|rate.*32\|estimatedRate\|defaultRate" src/
+# Look for any literal numeric tax/withholding rate; should always derive from the tax engine
+```
+**Severity:** HIGH (silently undertaxes/overtaxes; user trusts the number)
+
+---
+
+## Bug 5 — Form line / report line hardcoded zero or placeholder
+**FinKeel shape:** Form 1040 Line 7 (capital gains) hardcoded `0`.
+**BookDrop equivalent:** `1120` / `1065` / Schedule C / Form 941 line-mapping hardcoded zeros — every form line should derive from the GL or the tax engine, never be a placeholder pretending to be a real value.
+**Grep:**
+```bash
+grep -rn "line[0-9]\+:\s*0\b\|line_[0-9]\+:\s*0\b\|line[0-9]\+:\s*null" src/
+grep -rn "// TODO.*line\|// placeholder.*amount\|// fixme.*calc" src/
+```
+**Severity:** HIGH (CPA expects line-level accuracy; placeholder zero looks identical to real zero)
+
+---
+
+## Bug 6 — Year hardcoded
+**FinKeel shape:** Tax year hardcoded `2026` in calculations.
+**BookDrop equivalent:** Same pattern — fiscal-year clients (non-Jan-start), multi-year planning views, prior-year filings, retroactive adjustments. Reminders, period selectors, file naming conventions all need a year parameter.
+**Grep:**
+```bash
+grep -rn "2024\|2025\|2026\|2027" src/ --include="*.ts" --include="*.tsx"
+# Then: grep -rn "new Date()\.getFullYear()" src/ — every result should be tied to user-selected period, not "now"
+grep -rn "new Date()\.getFullYear()\|Date\.now()" src/
+```
+**Severity:** HIGH (creates silent year-rollover bugs every January 1)
+
+---
+
+## Bug 7 — AR/AP hardcoded zero in cash-flow / liquidity
+**FinKeel shape:** Business unpaid invoices hardcoded `0` in cash flow.
+**BookDrop equivalent:** AR aging not factored into client liquidity; AP not factored into cash burn; outstanding 1099s ignored when forecasting tax owed.
+**Grep:**
+```bash
+grep -rn "ar:\s*0\|ap:\s*0\|accountsReceivable\s*=\s*0\|invoicesUnpaid\s*=\s*0" src/
+grep -rn "// TODO.*AR\|// FIXME.*invoice" src/
+```
+**Severity:** MEDIUM (forecasts look optimistic; CPAs catch this fast but trust suffers)
+
+---
+
+## Bug 8 — `// Simulated` or fake calculation in production
+**FinKeel shape:** Consulting "billable hours = txCount × 40" with literal `// Simulated` comment, shipped to prod.
+**BookDrop equivalent:** Any "estimated metric" with no formula citation — utilization rate, realization rate, accounts-collected ratio, cycle-time average.
+**Grep:**
+```bash
+grep -rn "// Simulated\|// simulated\|// fake\|// TODO real" src/
+grep -rn "× 40\|\\* 40\|hours\s*=.*count" src/
+grep -rn "estimated\|projected\|approximate" src/ | grep -v "test\|comment\|documentation"
+```
+**Severity:** CRITICAL (a `// Simulated` comment in production code is a smoking gun)
+
+---
+
+## Bug 9 — Threshold / cap hardcoded with year-specific value
+**FinKeel shape:** OBBBA `$500` housing-deduction threshold hardcoded.
+**BookDrop equivalent:** Section 179 cap, R&D credit cap, mileage rate, EITC AGI floor, 1099-NEC issuance threshold ($600), 1099-K threshold (changing 2026), de minimis fringe benefit cap.
+**Grep:**
+```bash
+grep -rn "500\|600\|2500\|5000\|10000\|25000\|threshold\|Threshold" src/
+# Sift for any literal that looks like a regulatory threshold
+grep -rn "section179\|sec_179\|de_minimis\|fringe" src/
+```
+**Severity:** HIGH (thresholds change every year or two; hardcoded = stealth bug)
+
+---
+
+## Bug 10 — Cycle-detection range too narrow
+**FinKeel shape:** Recurring engine cycle-range default likely too narrow (25-32 days for monthly) — misses 4-4-5 retail calendars and bi-weekly close periods.
+**BookDrop equivalent:** Recurring AJE cycle detection — fiscal periods aren't always calendar months; some clients use 4-4-5 retail calendars; quarter-end can fall on different weekdays.
+**Grep:**
+```bash
+grep -rn "25\s*\.\.\s*32\|cycleDays\|cycle_days\|monthlyRange\|weekly_range" src/
+grep -rn "fiscal\|445\|4-4-5" src/ supabase/migrations/
+# If no results for "fiscal" or "445", the system assumes calendar months
+```
+**Severity:** MEDIUM (silently misses recurring patterns for fiscal-year clients)
+
+---
+
+## Bug 11 — Modal hardcodes object fields to 0 even when extractor returned values
+**FinKeel shape:** Edit modal initialized object fields to `0` after a parser extracted them — overwriting parsed data with zeros.
+**BookDrop equivalent:** Every Edit/Add modal that calls a parser. Engagement Letter modal, Add Client modal (with paste-from-clipboard), AJE entry modal.
+**Grep:**
+```bash
+# Find all modal components that accept parsed data
+grep -rn "useState.*0\|defaultValue=\\{0\\}\|defaultValues.*0" src/components/ src/pages/ --include="*.tsx"
+# For each, check if a parser is called nearby — and whether the parsed values overwrite the zeros
+grep -rn "const \\[.*\\] = useState<.*>(0)" src/
+```
+**Severity:** HIGH (silently discards parsed data; user thinks AI failed when it actually worked)
+
+---
+
+## Bug 12 — Read path drops fields that the write path stored (asymmetric)
+**FinKeel shape:** Migration added a column. Write path inserted into it. Read path's SELECT statement didn't include it. Tests counted rows, not fields, so it passed.
+**BookDrop equivalent:** Same — migration adds `notes_for_client`, `period_year`, `last_seen_at`, etc., write path stores them, the SELECT clause forgot the column.
+**Grep:**
+```bash
+# List every SELECT statement
+grep -rn "\\.select(" src/lib/ src/hooks/ --include="*.ts"
+# Cross-check against schema: every column that exists in supabase/migrations/ should appear in SOME select
+# Compare: grep "ADD COLUMN" supabase/migrations/*.sql vs grep ".select(" src/
+diff <(grep -hoE "ADD COLUMN \w+" supabase/migrations/*.sql | sort -u) <(grep -hoE "select\\(['\"][^)]*['\"]\\)" src/lib/ -r | sort -u)
+# (Manual diff because tooling differs — the point is: schema columns ⊆ select clauses)
+```
+**Severity:** HIGH (extremely common in growing codebases; tests rarely catch it)
+
+---
+
+## Bug 13 — Edge Function / cron / serverless code shipped but never deployed
+**FinKeel shape:** Aggregate-rebuilder Edge Function had complete code (665 lines), migrations applied, cron scheduled — but `supabase functions deploy` was never run. Cron fired into 404 for weeks. Audit agent said "yes brain works" because the code was perfect. Code review cannot detect this.
+**BookDrop equivalent:** Auto-reminders cron, sign-document Edge Function, notify-upload Edge Function, any future reconciliation cron.
+**Grep + live verification:**
+```bash
+# Static check (necessary but not sufficient)
+grep -rn "supabase functions deploy\|functions deploy" .github/ vercel.json scripts/ 2>/dev/null
+# Live check (the only real check)
+# After deploy, run for each Edge Function:
+#   supabase functions list   → confirm function name appears
+#   curl -X POST <function-url> -H "Authorization: Bearer $SERVICE_ROLE_KEY"  → expect 200
+# After scheduling cron:
+#   Wait 24h → check logs for at least one successful run
+```
+**Severity:** CRITICAL (silent-no-op for weeks; user only notices when missing data accumulates)
+
+---
+
+## Pre-launch checklist usage
+
+Before shipping any release that touches:
+- Financial calculations (Bugs 2-9)
+- Document parsing (Bug 1, 11, 12)
+- Scheduled / serverless code (Bug 13)
+- Recurring engines (Bug 10)
+- Modals that consume parser output (Bug 11)
+
+Run the relevant greps. Document each result in the PR description as either:
+- **HIT — fixed in commit `<sha>`**
+- **HIT — false positive (reason)**
+- **NO HITS**
+
+If the checklist is skipped, the PR template should fail the merge.
