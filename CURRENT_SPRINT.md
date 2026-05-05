@@ -31,6 +31,7 @@ Demo mode still live at https://bookkeeper-portal.vercel.app. Production launch 
 | 2026-05-05 | AI-first audit is mandatory pre-launch gate. BookDrop currently fails (1/5 PASS). Pivot work blocks V1 launch. | Audit run during this session, recorded in `DATA_FLYWHEEL.md` §B |
 | 2026-05-05 | New rule files added: `bug-checklist.md` (§11 13-bug grep checklist), `strategic-roadmap.md` (3-stage path). `execution.md` Phase 7 gained live-verification gate + AI-first audit gate + flywheel-worksheet gate. | This session |
 | 2026-05-05 | Off-platform backup pipeline scaffolded: `scripts/backup-pg-to-r2.ps1` + `scripts/RESTORE_DRILL.md`. Activation pending Cloudflare R2 bucket + Wrangler + Task Scheduler. | This session |
+| 2026-05-05 | Adopt 5 logic-transferred patterns from Perplexity Computer launch (May 2026), adapted to CPA work — NOT financial advisory. Added to backlog: source-traceable everything (provenance UI), Client Tearsheet page, Workflow Library (12 CPA workflows), cross-client portfolio screen, native QBO/Xero integration. Explicitly excluded: investment recommendations, savings advice, asset allocation — Level 3 per LEGAL_GUARDRAILS.md, requires licensing not in scope for BookDrop. | Founder directive: pattern-transfer yes, scope-drift no |
 
 ---
 
