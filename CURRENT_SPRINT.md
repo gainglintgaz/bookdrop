@@ -1,12 +1,36 @@
 # CURRENT_SPRINT.md — BookDrop
 ## Update this after EVERY task. This is how Claude Code knows what to do next.
 
-Last updated: 2026-04-10
-Sprint goal: Ship V1 — connect services, deploy, go live
+Last updated: 2026-05-05
+Sprint goal: Pass AI-first audit + finish off-platform backup pipeline + ship V1
 
 ---
 
-## STATUS: DEPLOYED — Live at https://bookkeeper-portal.vercel.app (demo mode)
+## STATUS: V1 deploy on hold — AI-first pivot work required before launch
+
+Demo mode still live at https://bookkeeper-portal.vercel.app. Production launch blocked on:
+
+1. **AI-first architectural pivot** — current audit is 1/5 PASS (see `DATA_FLYWHEEL.md` §B). 16 intelligence engines must move from opt-in Analysis tab to default core flow. ~2-3 weeks of restructuring work.
+2. **Outcomes + corrections capture (Phase A of data flywheel)** — schema additions + capture in core flow. Without this, the flywheel never starts spinning.
+3. **R2 backup pipeline live** — script exists (`scripts/backup-pg-to-r2.ps1`); needs Cloudflare R2 bucket + Wrangler + Task Scheduler entry.
+4. **Pre-launch bug checklist run** — 13 grep patterns from `.claude/rules/bug-checklist.md`.
+5. **Service config still pending** — Supabase migrations, Resend account, Stripe products (unchanged from prior sprint).
+
+---
+
+## Decisions Log
+
+| Date | Decision | Source |
+|---|---|---|
+| 2026-04-10 | Tax estimator archived per LEGAL_GUARDRAILS.md (requires PTIN). | Legal review |
+| 2026-04-10 | Mobile responsive pass + dead-button audit + a11y fixes shipped. | Overnight polish session |
+| 2026-04-10 | Code-split ClientDetailPage 670KB → 47KB; 21 → 48 tests. | Overnight polish session |
+| 2026-05-05 | Reject "fold BookDrop into adjacent product as third account type" architecture. ~4 weeks of rewrite for ~$315/yr savings = negative ROI. | Founder decision |
+| 2026-05-05 | Adopt 3-stage path: standalone V1 → adjacent-product probe (only if Stage 1 weak) → spin-out if proven. Recorded in `.claude/rules/strategic-roadmap.md`. | Founder directive |
+| 2026-05-05 | Adopt universal `ai-first-principles.md` and `data-flywheel.md` from VictorForge factory. Per-project worksheet at `DATA_FLYWHEEL.md`. | Founder directive |
+| 2026-05-05 | AI-first audit is mandatory pre-launch gate. BookDrop currently fails (1/5 PASS). Pivot work blocks V1 launch. | Audit run during this session, recorded in `DATA_FLYWHEEL.md` §B |
+| 2026-05-05 | New rule files added: `bug-checklist.md` (§11 13-bug grep checklist), `strategic-roadmap.md` (3-stage path). `execution.md` Phase 7 gained live-verification gate + AI-first audit gate + flywheel-worksheet gate. | This session |
+| 2026-05-05 | Off-platform backup pipeline scaffolded: `scripts/backup-pg-to-r2.ps1` + `scripts/RESTORE_DRILL.md`. Activation pending Cloudflare R2 bucket + Wrangler + Task Scheduler. | This session |
 
 ---
 
@@ -171,14 +195,27 @@ Sprint goal: Ship V1 — connect services, deploy, go live
 
 ---
 
-## AFTER DEPLOY (polish)
+## BEFORE V1 LAUNCH — blocking work (NOT deferable)
+
+These cannot wait until "after deploy". They must complete before the public V1 ships:
+
+- [ ] **AI-first architectural pivot** — see `V1_FEATURE_BACKLOG.md` row 1 + `DATA_FLYWHEEL.md` §D. ~2-3 weeks of restructuring.
+- [ ] **Outcomes + corrections capture (Phase A of data flywheel)** — see `V1_FEATURE_BACKLOG.md` row 2 + `DATA_FLYWHEEL.md` §C. Schema additions + capture in core flow.
+- [ ] **Pre-launch bug checklist run** — all 13 patterns from `.claude/rules/bug-checklist.md`, results documented in PR.
+- [ ] **R2 backup pipeline live + Task Scheduler entry** — script exists at `scripts/backup-pg-to-r2.ps1`, drill doc at `scripts/RESTORE_DRILL.md`. Activation pending: Cloudflare R2 bucket creation, Wrangler install, Windows Task Scheduler entry, first successful upload verified in `backups.log`.
+- [ ] **First quarterly restore drill scheduled** — within 30 days of going live.
+
+## AFTER DEPLOY (polish — only safe to defer)
 
 - [x] Mobile responsive pass — DONE
 - [x] Dead button audit — DONE
+- [x] Accessibility audit — DONE (aria-labels on icon buttons + tabs)
+- [x] Code-split ClientDetailPage 670KB → 47KB — DONE
+- [x] Test coverage 21 → 48 — DONE
 - [ ] Test full flow: signup → add client → upload → dashboard → reminder → ZIP
 - [ ] Test Stripe: upgrade → webhook → plan change → customer portal
 - [ ] Add OG image (og:image meta tag — needs a designed image)
-- [ ] PostHog analytics integration (optional)
+- [ ] Privacy-first analytics integration (optional)
 
 ---
 
@@ -211,6 +248,7 @@ Sprint goal: Ship V1 — connect services, deploy, go live
 ---
 
 ## NEXT SESSION START HERE:
-→ Migrations done? Switch VITE_MODE=cloud in Vercel, redeploy, test end-to-end
-→ Stripe configured? Test checkout → webhook → plan change → customer portal
-→ Need content? Add OG image for social sharing
+1. Read `DATA_FLYWHEEL.md` §D for the AI-first pivot work plan — start with auto-categorization at upload moment (D.1).
+2. Read `V1_FEATURE_BACKLOG.md` rows 1-2 for the engineering scope of the pivot + Phase A flywheel capture.
+3. Run the `.claude/rules/bug-checklist.md` greps against current code; log hits in errors-fixed.json.
+4. If founder is ready to wire R2: follow `scripts/RESTORE_DRILL.md` "Setup checklist" section, then test backup script with a fresh dev Supabase project.
