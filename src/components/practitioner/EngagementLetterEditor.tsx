@@ -18,17 +18,30 @@
 // If the bookkeeper never opens it, the legacy "send the client your portal
 // token" flow stays unchanged.
 
-import { useState } from 'react'
-import { Plus, Trash2, Send, Loader2, CheckCircle, AlertCircle, Users } from 'lucide-react'
+import { useState, lazy, Suspense } from 'react'
+import { Plus, Trash2, Send, Loader2, CheckCircle, AlertCircle, Users, MapPin } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import type { SignerRole, EngagementLetter } from '@/types'
+import { supabase } from '@/lib/supabase'
+import type { SignerRole, SignaturePlacement, EngagementLetter } from '@/types'
+
+// Lazy-load the placement designer — pdfjs-dist is heavy (440KB chunk) and
+// most bookkeepers will use the default last-page placement without ever
+// opening the visual editor.
+const SignaturePlacementDesigner = lazy(() =>
+  import('./SignaturePlacementDesigner').then(m => ({ default: m.SignaturePlacementDesigner }))
+)
 
 interface SignatoryDraft {
   id: string  // local-only, stable for keys
   role: SignerRole
   name: string
   email: string
+  /** Per-page placement coords. Empty = default last-page signature. Set via SignaturePlacementDesigner. */
+  placement?: SignaturePlacement[]
 }
+
+/** Stable color palette for signatory markers in the placement designer. */
+const SIGNATORY_COLORS = ['#4f46e5', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4']
 
 interface InviteResult {
   email: string
@@ -57,12 +70,14 @@ function makeId(): string {
 }
 
 export function EngagementLetterEditor({ letter, bookkeeperId, onInvitesSent }: Props) {
-  const [stage, setStage] = useState<'idle' | 'editing' | 'sending' | 'sent'>('idle')
+  const [stage, setStage] = useState<'idle' | 'editing' | 'designing' | 'sending' | 'sent'>('idle')
   const [drafts, setDrafts] = useState<SignatoryDraft[]>([
     { id: makeId(), role: 'primary', name: '', email: '' },
   ])
   const [results, setResults] = useState<InviteResult[]>([])
   const [error, setError] = useState<string | null>(null)
+  const [pdfBytes, setPdfBytes] = useState<ArrayBuffer | null>(null)
+  const [pdfLoadError, setPdfLoadError] = useState<string | null>(null)
 
   const addRow = () => {
     setDrafts(prev => [
@@ -98,6 +113,50 @@ export function EngagementLetterEditor({ letter, bookkeeperId, onInvitesSent }: 
     return null
   }
 
+  /**
+   * Open the visual placement designer.
+   * Validates signatories first (need at least name + email per row), then
+   * downloads the PDF from Supabase Storage so the designer can render it.
+   */
+  const handleOpenDesigner = async () => {
+    const validationError = validate()
+    if (validationError) {
+      setError(validationError)
+      return
+    }
+    setError(null)
+
+    // Need to download the PDF — uses a 1-hour signed URL like EngagementLetterRow.
+    try {
+      const { data, error: dlErr } = await supabase.storage
+        .from('documents')
+        .createSignedUrl(letter.storage_path, 3600)
+      if (dlErr || !data?.signedUrl) {
+        setPdfLoadError(dlErr?.message ?? 'Could not generate document URL')
+        return
+      }
+      const resp = await fetch(data.signedUrl)
+      if (!resp.ok) {
+        setPdfLoadError(`Failed to download document (HTTP ${resp.status})`)
+        return
+      }
+      const bytes = await resp.arrayBuffer()
+      setPdfBytes(bytes)
+      setPdfLoadError(null)
+      setStage('designing')
+    } catch (err) {
+      setPdfLoadError(err instanceof Error ? err.message : 'Unknown error loading document')
+    }
+  }
+
+  const handlePlacementsSaved = (placementsBySignatory: Record<string, SignaturePlacement[]>) => {
+    setDrafts(prev => prev.map(d => ({
+      ...d,
+      placement: placementsBySignatory[d.id] ?? d.placement ?? [],
+    })))
+    setStage('editing')
+  }
+
   const handleSendInvites = async () => {
     const validationError = validate()
     if (validationError) {
@@ -118,6 +177,7 @@ export function EngagementLetterEditor({ letter, bookkeeperId, onInvitesSent }: 
             role: d.role,
             name: d.name.trim(),
             email: d.email.trim(),
+            placement: d.placement && d.placement.length > 0 ? d.placement : undefined,
           })),
         }),
       })
@@ -193,7 +253,34 @@ export function EngagementLetterEditor({ letter, bookkeeperId, onInvitesSent }: 
     )
   }
 
+  // designing: visual placement editor open in fullscreen-ish modal
+  if (stage === 'designing' && pdfBytes) {
+    const validDrafts = drafts.filter(d => d.name.trim() && d.email.trim())
+    return (
+      <div className="fixed inset-0 z-50 bg-gray-100 p-4">
+        <Suspense fallback={
+          <div className="flex h-full items-center justify-center">
+            <Loader2 className="h-6 w-6 animate-spin text-primary" />
+          </div>
+        }>
+          <SignaturePlacementDesigner
+            pdfSource={pdfBytes}
+            signatories={validDrafts.map((d, i) => ({
+              id: d.id,
+              label: `${d.name} (${d.role})`,
+              color: SIGNATORY_COLORS[i % SIGNATORY_COLORS.length],
+              placements: d.placement ?? [],
+            }))}
+            onDone={handlePlacementsSaved}
+            onCancel={() => setStage('editing')}
+          />
+        </Suspense>
+      </div>
+    )
+  }
+
   // editing | sending
+  const totalPlacements = drafts.reduce((sum, d) => sum + (d.placement?.length ?? 0), 0)
   return (
     <div className="rounded-lg border border-gray-200 bg-white p-4">
       <div className="mb-3 flex items-center justify-between">
@@ -282,6 +369,36 @@ export function EngagementLetterEditor({ letter, bookkeeperId, onInvitesSent }: 
           <span>{error}</span>
         </div>
       )}
+
+      {pdfLoadError && (
+        <div className="mt-3 flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+          <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+          <span>{pdfLoadError} — placement designer unavailable; signatures will use the default last-page placement.</span>
+        </div>
+      )}
+
+      {/* Placement summary + designer entry point */}
+      <div className="mt-4 flex flex-wrap items-center gap-3 border-t border-gray-100 pt-3">
+        <button
+          type="button"
+          onClick={handleOpenDesigner}
+          disabled={stage === 'sending'}
+          className="inline-flex items-center gap-1.5 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:border-primary hover:text-primary disabled:opacity-50"
+        >
+          <MapPin className="h-3.5 w-3.5" />
+          {totalPlacements > 0 ? 'Edit signature placement' : 'Configure signature placement (optional)'}
+        </button>
+        {totalPlacements > 0 && (
+          <span className="text-[11px] text-gray-500">
+            {totalPlacements} placement{totalPlacements === 1 ? '' : 's'} configured.
+          </span>
+        )}
+        {totalPlacements === 0 && (
+          <span className="text-[11px] text-gray-500">
+            Without explicit placement, signatures appear on the last page (default).
+          </span>
+        )}
+      </div>
 
       <div className="mt-4 flex items-center justify-end gap-2">
         <button

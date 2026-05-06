@@ -581,27 +581,13 @@ function DocumentsTab({
             </p>
           </div>
         ) : (
-          <div className="space-y-2">
+          <div className="space-y-3">
             {engagementLetters.map(letter => (
-              <div key={letter.id}
-                className="flex items-center justify-between rounded-lg border border-gray-200 bg-white px-4 py-3">
-                <div className="flex items-center gap-2">
-                  <FileSignature className="h-4 w-4 text-gray-400" />
-                  <span className="text-sm text-gray-700">{letter.label}</span>
-                </div>
-                {letter.signature ? (
-                  <span className="flex items-center gap-1 text-xs font-medium text-emerald-700">
-                    <CheckCircle className="h-3.5 w-3.5" />
-                    Signed {new Date(letter.signature.signed_at).toLocaleDateString()}
-                    {' by '}{letter.signature.signer_name}
-                  </span>
-                ) : (
-                  <span className="flex items-center gap-1 text-xs text-amber-600">
-                    <Clock className="h-3.5 w-3.5" />
-                    Awaiting signature
-                  </span>
-                )}
-              </div>
+              <EngagementLetterCard
+                key={letter.id}
+                letter={letter}
+                bookkeeperId={user?.id ?? ''}
+              />
             ))}
           </div>
         )}
@@ -1305,6 +1291,82 @@ function CompletenessReportSection({ requirements, parsedStatements }: { require
           </div>
         ))}
       </div>
+    </div>
+  )
+}
+
+// ─── ENGAGEMENT LETTER CARD ─────────────────────────────────────────────────
+// Wraps each letter row with an optional EngagementLetterEditor for the
+// multi-signer invite flow. The editor itself is lazy-loaded — most
+// bookkeepers won't open it for simple single-signer letters, and
+// pdfjs-dist (used by SignaturePlacementDesigner) is heavy.
+
+const EngagementLetterEditor = lazy(() =>
+  import('@/components/practitioner/EngagementLetterEditor').then(m => ({ default: m.EngagementLetterEditor })),
+)
+
+function EngagementLetterCard({
+  letter,
+  bookkeeperId,
+}: {
+  letter: EngagementLetterWithSignature
+  bookkeeperId: string
+}) {
+  const [editorOpen, setEditorOpen] = useState(false)
+  const isFullySigned = !!letter.fully_signed_at
+  const hasSignature = !!letter.signature
+
+  return (
+    <div className="rounded-lg border border-gray-200 bg-white">
+      <div className="flex items-center justify-between px-4 py-3">
+        <div className="flex items-center gap-2">
+          <FileSignature className="h-4 w-4 text-gray-400" />
+          <span className="text-sm text-gray-700">{letter.label}</span>
+        </div>
+        <div className="flex items-center gap-3">
+          {isFullySigned ? (
+            <span className="flex items-center gap-1 text-xs font-medium text-emerald-700">
+              <CheckCircle className="h-3.5 w-3.5" />
+              Fully signed {new Date(letter.fully_signed_at!).toLocaleDateString()}
+            </span>
+          ) : hasSignature ? (
+            <span className="flex items-center gap-1 text-xs font-medium text-emerald-700">
+              <CheckCircle className="h-3.5 w-3.5" />
+              Signed {new Date(letter.signature!.signed_at).toLocaleDateString()}
+              {' by '}{letter.signature!.signer_name}
+            </span>
+          ) : (
+            <span className="flex items-center gap-1 text-xs text-amber-600">
+              <Clock className="h-3.5 w-3.5" />
+              Awaiting signature
+            </span>
+          )}
+          {!isFullySigned && bookkeeperId && (
+            <button
+              type="button"
+              onClick={() => setEditorOpen(o => !o)}
+              className="text-xs font-medium text-primary hover:underline"
+            >
+              {editorOpen ? 'Close' : 'Add signatories'}
+            </button>
+          )}
+        </div>
+      </div>
+      {editorOpen && bookkeeperId && (
+        <div className="border-t border-gray-100 p-3">
+          <Suspense fallback={
+            <div className="flex items-center justify-center py-6">
+              <Loader2 className="h-5 w-5 animate-spin text-primary" />
+            </div>
+          }>
+            <EngagementLetterEditor
+              letter={letter}
+              bookkeeperId={bookkeeperId}
+              onInvitesSent={() => setEditorOpen(false)}
+            />
+          </Suspense>
+        </div>
+      )}
     </div>
   )
 }
