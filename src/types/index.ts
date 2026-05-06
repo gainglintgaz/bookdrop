@@ -177,6 +177,9 @@ export interface EngagementLetter {
   file_size_bytes: number
   is_active: boolean
   created_at: string
+  // Migration 006 — multi-signer support
+  fully_signed_at?: string | null
+  total_signatories_required?: number | null
 }
 
 export interface Signature {
@@ -191,10 +194,62 @@ export interface Signature {
   signed_pdf_path: string | null
   ip_address: string | null
   portal_token_used: string
+  // Migration 005 — Block 3 E1 hardening
+  user_agent?: string | null
+  consent_disclosure_agreed_at?: string | null
+  consent_disclosure_version?: string | null
+  attempt_id?: string | null
+  // Migration 006 — Block 3 E2 multi-signer
+  signatory_id?: string | null
+}
+
+/** Block 3 E2: signer role — drives email tone, defaults, audit clarity. */
+export type SignerRole = 'primary' | 'spouse' | 'partner' | 'guarantor' | 'other'
+
+/** Block 3 E2: status of a signatory's part of the workflow. */
+export type SignatoryStatus = 'invited' | 'viewed' | 'signed' | 'voided'
+
+/**
+ * Block 3 E2: per-signature placement coordinate metadata. The PDF coordinate
+ * system is bottom-left origin per pdf-lib convention. Coordinates are in PDF
+ * points (1 point = 1/72 inch).
+ */
+export interface SignaturePlacement {
+  page: number          // 1-indexed
+  type: 'signature' | 'initials' | 'date' | 'text'
+  x: number
+  y: number
+  width: number
+  height: number
+  /** Only used when type='text' — links to AcroForm field name (Phase E3). */
+  fieldName?: string
+}
+
+/** Migration 006 — Block 3 E2: one signatory per signer per letter. */
+export interface EngagementLetterSignatory {
+  id: string
+  engagement_letter_id: string
+  bookkeeper_id: string
+  signer_role: SignerRole
+  signer_name: string
+  signer_email: string
+  signer_portal_token: string
+  required_pages: number[]
+  placement: SignaturePlacement[]
+  signed_at: string | null
+  signature_id: string | null
+  previous_attempt_id: string | null
+  invite_sent_at: string | null
+  invite_email_id: string | null
+  status: SignatoryStatus
+  created_at: string
+  updated_at: string
 }
 
 export interface EngagementLetterWithSignature extends EngagementLetter {
   signature: Signature | null
+  /** Migration 006 — list of all signatories for this letter (multi-signer letters have N>=2). */
+  signatories?: EngagementLetterSignatory[]
 }
 
 // ─── ENRICHED/JOINED TYPES ──────────────────────────────────────────────────

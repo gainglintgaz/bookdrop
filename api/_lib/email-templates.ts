@@ -287,3 +287,72 @@ export function bookkeeperSignatureNotificationHtml(data: SignerConfirmationData
 </body>
 </html>`
 }
+
+
+// ─── BLOCK 3 E2: Signatory invite email ──────────────────────────────────────
+// Sent when a bookkeeper adds a new signatory to an engagement letter and
+// requests invitations be sent. Each signatory gets their own unique signing URL
+// (built from their per-signatory portal token).
+
+interface SignatoryInviteData {
+  signerName: string
+  signerRole: 'primary' | 'spouse' | 'partner' | 'guarantor' | 'other'
+  documentLabel: string
+  practitionerName: string
+  practiceName: string
+  signingUrl: string
+  practitionerReplyTo: string | null
+}
+
+export function signatoryInviteEmailHtml(data: SignatoryInviteData): string {
+  const roleNote =
+    data.signerRole === 'primary'
+      ? 'as the primary signer'
+      : data.signerRole === 'spouse'
+        ? 'as the spouse'
+        : data.signerRole === 'partner'
+          ? 'as a partner'
+          : data.signerRole === 'guarantor'
+            ? 'as a guarantor'
+            : 'as a co-signer'
+
+  return `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Please sign ${escapeHtmlSafe(data.documentLabel)}</title>
+</head>
+<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; color: #1f2937;">
+  <div style="border-bottom: 2px solid #4f46e5; padding-bottom: 16px; margin-bottom: 24px;">
+    <h1 style="margin: 0; font-size: 22px; color: #312e81;">Signature requested</h1>
+  </div>
+
+  <p>Hi ${escapeHtmlSafe(data.signerName)},</p>
+
+  <p><strong>${escapeHtmlSafe(data.practitionerName || data.practiceName || 'A practitioner')}</strong> has asked you to electronically sign <strong>${escapeHtmlSafe(data.documentLabel)}</strong> ${roleNote}.</p>
+
+  <p style="margin: 24px 0;">
+    <a href="${data.signingUrl}" style="display: inline-block; background: #4f46e5; color: white; padding: 12px 24px; border-radius: 6px; text-decoration: none; font-weight: 600;">
+      Review and Sign
+    </a>
+  </p>
+
+  <p style="font-size: 13px; color: #6b7280;">Your signing link is unique to you. Please don't share it — each signatory has their own link, and signing on someone else's behalf would create an invalid record.</p>
+
+  <h3 style="margin-top: 32px; font-size: 14px; color: #374151;">What happens next</h3>
+  <ol style="font-size: 13px; padding-left: 20px; color: #4b5563;">
+    <li>Click the link above to open the document in your browser.</li>
+    <li>Read the brief electronic-signature consent disclosure.</li>
+    <li>Draw your signature and submit. You'll get a confirmation email with a copy.</li>
+  </ol>
+
+  <p style="margin-top: 24px; padding: 12px; background: #f9fafb; border-radius: 4px; font-size: 12px; color: #6b7280;">
+    Questions? Reply to this email${data.practitionerReplyTo ? ` or contact <a href="mailto:${escapeHtmlSafe(data.practitionerReplyTo)}">${escapeHtmlSafe(data.practitionerReplyTo)}</a>` : ''}. If you weren't expecting this request, you can ignore the email — no signature will be created without your action.
+  </p>
+
+  <p style="margin-top: 24px; font-size: 12px; color: #9ca3af;">
+    Signature captured under the federal ESIGN Act (15 U.S.C. §§ 7001-7031) and the Uniform Electronic Transactions Act (UETA).
+  </p>
+</body>
+</html>`
+}

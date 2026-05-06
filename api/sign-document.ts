@@ -103,7 +103,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const {
     engagementLetterId,
     clientId,
+    // Legacy single-signer flow uses portalToken (the client's portal token).
+    // Multi-signer flow (Block 3 E2) uses signatoryToken (the per-signatory unique token).
+    // Either may be present; we accept both to keep existing single-signer flow working.
     portalToken,
+    signatoryToken,
     signerName,
     signerEmail,
     signatureImageData,
@@ -111,7 +115,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     consentDisclosureAgreedAt,
   } = req.body ?? {}
 
-  if (!engagementLetterId || !clientId || !portalToken ||
+  // Resolve which token we're working with — multi-signer takes precedence.
+  // Both code paths use the same rate-limit key downstream.
+  const effectiveToken = signatoryToken ?? portalToken
+  const isMultiSigner = !!signatoryToken
+
+  if (!engagementLetterId || !clientId || !effectiveToken ||
       !signerName || !signerEmail || !signatureImageData) {
     return res.status(400).json({ error: 'Missing required fields' })
   }
@@ -135,8 +144,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const ipAddress = req.headers['x-forwarded-for']?.toString().split(',')[0]?.trim() ?? null
   const userAgent = req.headers['user-agent']?.toString() ?? null
 
-  // ── Rate limit (5 attempts/hour per portal_token) ───────────────────────
-  const rate = await checkRateLimit(portalToken, ipAddress, userAgent)
+  // ── Rate limit (5 attempts/hour per token — applies to BOTH multi & legacy) ─
+  const rate = await checkRateLimit(effectiveToken, ipAddress, userAgent)
   if (!rate.ok) {
     res.setHeader('Retry-After', String(rate.retryAfterSeconds))
     return res.status(429).json({
@@ -144,30 +153,81 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     })
   }
 
-  // ── Validate portal token ───────────────────────────────────────────────
-  const { data: client, error: clientErr } = await supabaseAdmin
-    .from('clients')
-    .select('id, bookkeeper_id, business_name, contact_email')
-    .eq('id', clientId)
-    .eq('portal_token', portalToken)
-    .maybeSingle()
+  // ── Token validation — branches by mode ─────────────────────────────────
+  // Multi-signer: validate the signatoryToken belongs to a non-voided signatory
+  //   on this engagement letter. The signatory record carries the bookkeeper_id
+  //   and per-page placement metadata.
+  // Legacy: validate the portalToken belongs to a real client. The signature
+  //   is implicitly the "primary" signatory (no per-page placement).
+  let bookkeeperIdForLetter: string
+  let signatory: {
+    id: string
+    required_pages: number[]
+    placement: Array<{ page: number; type: string; x: number; y: number; width: number; height: number; fieldName?: string }>
+  } | null = null
 
-  if (clientErr || !client) {
-    await logAttempt(portalToken, ipAddress, userAgent, 'invalid_token')
-    return res.status(403).json({ error: 'Invalid portal token' })
+  if (isMultiSigner) {
+    // Multi-signer path: lookup signatory by signatoryToken
+    const { data: signatoryRow, error: signatoryErr } = await supabaseAdmin
+      .from('engagement_letter_signatories')
+      .select('id, engagement_letter_id, bookkeeper_id, status, required_pages, placement')
+      .eq('signer_portal_token', signatoryToken)
+      .eq('engagement_letter_id', engagementLetterId)
+      .maybeSingle()
+
+    if (signatoryErr || !signatoryRow) {
+      await logAttempt(effectiveToken, ipAddress, userAgent, 'invalid_token')
+      return res.status(403).json({ error: 'Invalid signatory token' })
+    }
+
+    if (signatoryRow.status === 'signed' || signatoryRow.status === 'voided') {
+      await logAttempt(effectiveToken, ipAddress, userAgent, 'already_signed')
+      return res.status(409).json({
+        error: signatoryRow.status === 'voided'
+          ? 'This signing invitation has been voided. Contact the practitioner.'
+          : 'You have already signed this document.',
+      })
+    }
+
+    bookkeeperIdForLetter = signatoryRow.bookkeeper_id
+    signatory = {
+      id: signatoryRow.id,
+      required_pages: Array.isArray(signatoryRow.required_pages) ? signatoryRow.required_pages : [],
+      placement: Array.isArray(signatoryRow.placement) ? signatoryRow.placement : [],
+    }
+  } else {
+    // Legacy single-signer path
+    const { data: client, error: clientErr } = await supabaseAdmin
+      .from('clients')
+      .select('id, bookkeeper_id, business_name, contact_email')
+      .eq('id', clientId)
+      .eq('portal_token', portalToken)
+      .maybeSingle()
+
+    if (clientErr || !client) {
+      await logAttempt(effectiveToken, ipAddress, userAgent, 'invalid_token')
+      return res.status(403).json({ error: 'Invalid portal token' })
+    }
+
+    bookkeeperIdForLetter = client.bookkeeper_id
   }
 
   // ── Already signed? ─────────────────────────────────────────────────────
-  const { data: existing } = await supabaseAdmin
-    .from('signatures')
-    .select('id')
-    .eq('engagement_letter_id', engagementLetterId)
-    .eq('client_id', clientId)
-    .maybeSingle()
+  // Multi-signer: signatory.status would have been 'signed' above (already returned 409)
+  // Legacy: check by client_id (primary signer can only sign once per letter)
+  if (!isMultiSigner) {
+    const { data: existing } = await supabaseAdmin
+      .from('signatures')
+      .select('id')
+      .eq('engagement_letter_id', engagementLetterId)
+      .eq('client_id', clientId)
+      .is('signatory_id', null)
+      .maybeSingle()
 
-  if (existing) {
-    await logAttempt(portalToken, ipAddress, userAgent, 'already_signed')
-    return res.status(409).json({ error: 'Document already signed' })
+    if (existing) {
+      await logAttempt(effectiveToken, ipAddress, userAgent, 'already_signed')
+      return res.status(409).json({ error: 'Document already signed' })
+    }
   }
 
   // ── Fetch engagement letter ─────────────────────────────────────────────
@@ -179,7 +239,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     .maybeSingle()
 
   if (letterErr || !letter) {
-    await logAttempt(portalToken, ipAddress, userAgent, 'invalid_token')
+    await logAttempt(effectiveToken, ipAddress, userAgent, 'invalid_token')
     return res.status(404).json({ error: 'Engagement letter not found' })
   }
 
@@ -187,7 +247,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const { data: bookkeeper } = await supabaseAdmin
     .from('bookkeepers')
     .select('email, full_name, practice_name, reply_to_email')
-    .eq('id', client.bookkeeper_id)
+    .eq('id', bookkeeperIdForLetter)
     .maybeSingle()
 
   try {
@@ -197,7 +257,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       .download(letter.storage_path)
 
     if (dlErr || !pdfData) {
-      await logAttempt(portalToken, ipAddress, userAgent, 'storage_failed')
+      await logAttempt(effectiveToken, ipAddress, userAgent, 'storage_failed')
       return res.status(500).json({ error: 'Failed to download document' })
     }
 
@@ -211,27 +271,40 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const signatureBytes = Buffer.from(signatureBase64, 'base64')
     const signatureImage = await pdfDoc.embedPng(signatureBytes)
 
-    const sigWidth = 200
-    const sigHeight = 60
-    const sigX = 60
-    const sigY = 80
+    // Block 3 E2: per-page placement.
+    // If signatory has explicit placements, use them. Otherwise (single-signer
+    // legacy or multi-signer with no placement specified), fall back to the
+    // last-page default that's been in production since V1.
+    const placements = signatory?.placement && signatory.placement.length > 0
+      ? signatory.placement.filter(p => p.type === 'signature')
+      : [{ page: pages.length, type: 'signature' as const, x: 60, y: 80, width: 200, height: 60 }]
 
-    lastPage.drawImage(signatureImage, {
-      x: sigX,
-      y: sigY,
-      width: sigWidth,
-      height: sigHeight,
-    })
+    for (const p of placements) {
+      // Pages are 1-indexed in our metadata; pdf-lib is 0-indexed
+      const pageIdx = Math.max(0, Math.min(pages.length - 1, p.page - 1))
+      const targetPage = pages[pageIdx]
+      targetPage.drawImage(signatureImage, {
+        x: p.x,
+        y: p.y,
+        width: p.width,
+        height: p.height,
+      })
+      // Audit text underneath every signature placement
+      targetPage.drawText(
+        `Signed by: ${signerName} | ${signerEmail} | ${new Date().toISOString()}`,
+        {
+          x: p.x,
+          y: p.y - 16,
+          size: 8,
+          color: rgb(0.4, 0.4, 0.4),
+        }
+      )
+    }
 
-    lastPage.drawText(
-      `Signed by: ${signerName} | ${signerEmail} | ${new Date().toISOString()}`,
-      {
-        x: sigX,
-        y: sigY - 16,
-        size: 8,
-        color: rgb(0.4, 0.4, 0.4),
-      }
-    )
+    // Maintain last-page audit text for backwards-compatibility with single-signer flow
+    // (placements only includes 'signature' types — not 'date' or 'text' which Phase E3
+    //  will handle via AcroForm). For now, the per-placement drawText above covers it.
+    void lastPage // keep reference for future per-page initials/date handling
 
     const signedPdfBytes = await pdfDoc.save()
     const signedPath = letter.storage_path.replace(
@@ -252,7 +325,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     if (uploadErr) {
       console.error('[sign-document] PDF upload failed — aborting signature commit:', uploadErr)
-      await logAttempt(portalToken, ipAddress, userAgent, 'storage_failed')
+      await logAttempt(effectiveToken, ipAddress, userAgent, 'storage_failed')
       return res.status(500).json({
         error: 'Failed to save signed document. Please try again.',
       })
@@ -265,18 +338,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       .insert({
         engagement_letter_id: engagementLetterId,
         client_id: clientId,
-        bookkeeper_id: client.bookkeeper_id,
+        bookkeeper_id: bookkeeperIdForLetter,
         signer_name: signerName,
         signer_email: signerEmail,
         signature_image_data: signatureImageData,
         signed_pdf_path: signedPath,
         signed_at: signedAtIso,
         ip_address: ipAddress,
-        portal_token_used: portalToken,
+        portal_token_used: effectiveToken,
         // Block 3 E1 hardening
         user_agent: userAgent,
         consent_disclosure_version: consentDisclosureVersion ?? null,
         consent_disclosure_agreed_at: consentDisclosureAgreedAt ?? null,
+        // Block 3 E2: link to signatory if multi-signer
+        signatory_id: signatory?.id ?? null,
       })
       .select('id')
       .single()
@@ -285,12 +360,48 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       // Rollback storage so we don't leak orphan PDFs
       console.error('[sign-document] signatures insert failed — rolling back storage:', insertErr)
       await supabaseAdmin.storage.from('documents').remove([signedPath]).catch(() => undefined)
-      await logAttempt(portalToken, ipAddress, userAgent, 'insert_failed')
+      await logAttempt(effectiveToken, ipAddress, userAgent, 'insert_failed')
       return res.status(500).json({ error: 'Failed to save signature' })
     }
 
     const signatureId = insertedRows.id
-    await logAttempt(portalToken, ipAddress, userAgent, 'success')
+    await logAttempt(effectiveToken, ipAddress, userAgent, 'success')
+
+    // Block 3 E2: if multi-signer, mark the signatory as signed and check
+    // whether all signatories have completed (in which case mark the letter
+    // fully_signed_at).
+    if (signatory) {
+      await supabaseAdmin
+        .from('engagement_letter_signatories')
+        .update({
+          status: 'signed',
+          signed_at: signedAtIso,
+          signature_id: signatureId,
+          updated_at: signedAtIso,
+        })
+        .eq('id', signatory.id)
+        .catch(() => undefined)
+
+      // Check if all signatories on this letter are now signed
+      const { data: counts } = await supabaseAdmin
+        .rpc('count_letter_signatures', { letter_id: engagementLetterId })
+        .single()
+      if (counts && (counts as { total_signed: number; total_required: number }).total_signed >=
+                    (counts as { total_signed: number; total_required: number }).total_required) {
+        await supabaseAdmin
+          .from('engagement_letters')
+          .update({ fully_signed_at: signedAtIso })
+          .eq('id', engagementLetterId)
+          .catch(() => undefined)
+      }
+    } else {
+      // Legacy single-signer: a signed signature means the letter is fully signed
+      await supabaseAdmin
+        .from('engagement_letters')
+        .update({ fully_signed_at: signedAtIso })
+        .eq('id', engagementLetterId)
+        .catch(() => undefined)
+    }
 
     // ── Confirmation emails (best-effort; never block success) ──────────
     // Generate a 1-hour signed URL for the signed PDF
@@ -320,7 +431,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         html: signerConfirmationEmailHtml(emailContext),
         replyTo: emailContext.practitionerReplyTo ?? undefined,
         signatureId,
-        bookkeeperId: client.bookkeeper_id,
+        bookkeeperId: bookkeeperIdForLetter,
         recipientRole: 'client',
       }),
       bookkeeper?.email
@@ -329,7 +440,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             subject: `${signerName} signed ${emailContext.documentLabel}`,
             html: bookkeeperSignatureNotificationHtml(emailContext),
             signatureId,
-            bookkeeperId: client.bookkeeper_id,
+            bookkeeperId: bookkeeperIdForLetter,
             recipientRole: 'bookkeeper',
           })
         : Promise.resolve(),
@@ -343,7 +454,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   } catch (err) {
     console.error('[sign-document] Error:', err)
-    await logAttempt(portalToken, ipAddress, userAgent, 'storage_failed').catch(() => undefined)
+    await logAttempt(effectiveToken, ipAddress, userAgent, 'storage_failed').catch(() => undefined)
     return res.status(500).json({
       error: err instanceof Error ? err.message : 'Signature processing failed'
     })
