@@ -42,6 +42,8 @@ export interface CreditCardSummary {
   newCharges: number | null
   paymentsAndCredits: number | null
   newBalance: number | null
+  /** Last 4 of the account number — extracted by the parser when present. Optional. */
+  accountLast4: string | null
 }
 
 export interface PayrollSummary {
@@ -386,6 +388,9 @@ function parseCreditCardStatement(
   const transactions = extractTransactions(lines)
   const text = lines.join('\n')
 
+  // Extract last-4 of card from common patterns: "ending in 1234", "**** 1234", "x1234".
+  const last4Match = text.match(/(?:ending\s+in\s+|\*+\s*|x)(\d{4})\b/i)
+
   const creditCard: CreditCardSummary = {
     creditLimit: extractDollarValue(text, /credit\s*limit[:\s]*\$?([\d,]+\.?\d*)/i),
     availableCredit: extractDollarValue(text, /available\s*credit[:\s]*\$?([\d,]+\.?\d*)/i),
@@ -396,6 +401,7 @@ function parseCreditCardStatement(
     newCharges: extractDollarValue(text, /(?:new\s*)?(?:charges|purchases)[:\s]*\$?([\d,]+\.?\d*)/i),
     paymentsAndCredits: extractDollarValue(text, /payments?\s*(?:and|&)\s*credits?[:\s]*\$?([\d,]+\.?\d*)/i),
     newBalance: extractDollarValue(text, /(?:new|statement)\s*balance[:\s]*\$?([\d,]+\.?\d*)/i),
+    accountLast4: last4Match ? last4Match[1] : null,
   }
 
   const totalDebits = transactions.filter(t => t.amount < 0).reduce((s, t) => s + Math.abs(t.amount), 0)

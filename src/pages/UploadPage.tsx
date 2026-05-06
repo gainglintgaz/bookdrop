@@ -16,7 +16,7 @@ import { ErrorState } from '@/components/shared/ErrorState'
 import { generateUploadDeadlineICS, getNextDeadline } from '@/lib/calendar'
 import { formatFileSize } from '@/lib/utils'
 import { autoCategorizeUpload } from '@/lib/auto-categorize-upload'
-import { CheckCircle, Clock, FileText, Calendar, Upload, History, AlertCircle, FileSignature, Sparkles } from 'lucide-react'
+import { CheckCircle, Clock, FileText, Calendar, Upload, History, AlertCircle, FileSignature } from 'lucide-react'
 
 export function UploadPage() {
   const { token } = useParams<{ token: string }>()

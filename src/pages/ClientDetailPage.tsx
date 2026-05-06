@@ -48,7 +48,7 @@ import {
   ArrowLeft, FileText, Download, Copy, CheckCircle, Clock, Send, Archive,
   Pencil, Loader2, Calendar, Table, MessageSquare, ShieldCheck, AlertTriangle,
   XCircle, Zap, Package, BarChart3, History, FolderDown, FileBarChart,
-  Brain, TrendingUp, Search, Shield, BookOpen, GitCompare, ClipboardCheck,
+  Brain, TrendingUp, Search, BookOpen, GitCompare, ClipboardCheck,
   CalendarDays, Camera, FileSignature,
 } from 'lucide-react'
 
@@ -709,7 +709,11 @@ function AnalysisTab({
 }) {
   const [section, setSection] = useState<AnalysisSection>('parse')
   const hasParsed = parsedStatements.length > 0
-  const hasEnoughForTrends = parsedStatements.length >= 3
+
+  // NOTE: per Trust Ladder gating refactor (.claude/rules/ai-first-principles.md §3),
+  // the "limited data" banner is no longer rendered at this level. Each engine panel
+  // (TrendAnalysisPanel, CashFlowForecastPanel) handles its own LOCKED / PREVIEW
+  // state internally based on monthsObserved. See LockedFeatureGate component.
 
   const emptyGate = (
     <div className="rounded-lg border border-gray-200 bg-white px-6 py-10 text-center">
@@ -719,15 +723,6 @@ function AnalysisTab({
       </p>
       <p className="mt-1 text-xs text-gray-500">
         Upload bank statements in the Documents tab to unlock analysis.
-      </p>
-    </div>
-  )
-
-  const limitedDataBanner = (
-    <div className="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
-      <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600" />
-      <p className="text-xs text-amber-800">
-        Showing limited data. Upload at least 3 months of statements for reliable trends.
       </p>
     </div>
   )

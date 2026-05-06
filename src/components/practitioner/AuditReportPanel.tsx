@@ -5,7 +5,7 @@ import { cn } from '@/lib/utils'
 import type {
   AuditReport,
   DuplicateGroup,
-  MissingRecurringItem,
+  MissingRecurring,
   UnusualTransaction,
 } from '@/lib/duplicate-detector'
 import {
@@ -30,7 +30,7 @@ function duplicateProvenance(d: DuplicateGroup): ProvenanceData {
 }
 
 /** Adapter: explain why this recurring item is missing. */
-function missingRecurringProvenance(m: MissingRecurringItem): ProvenanceData {
+function missingRecurringProvenance(m: MissingRecurring): ProvenanceData {
   return {
     type: 'computed',
     summary: `Missing expected recurring "${m.description}"`,

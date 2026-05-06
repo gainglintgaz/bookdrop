@@ -611,6 +611,7 @@ function generateDemoParseResults(requirements: RequirementWithUploads[]): Parse
             newCharges: 940.22,
             paymentsAndCredits: 523.41,
             newBalance: 940.22,
+            accountLast4: '4321',
           },
         }
         break

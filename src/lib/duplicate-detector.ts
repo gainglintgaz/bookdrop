@@ -34,6 +34,8 @@ export interface UnusualTransaction {
   reason: string
   averageAmount: number
   zScore: number
+  /** Derived from |zScore|: >=3 critical, otherwise warning. Used by source-provenance UI. */
+  severity: 'critical' | 'warning'
   recommendation: string
 }
 
@@ -337,6 +339,7 @@ function detectUnusualTransactions(transactions: Transaction[]): UnusualTransact
           reason: `${ratio.toFixed(1)}x ${ratio > 1 ? 'higher' : 'lower'} than average for this vendor`,
           averageAmount: Math.round(m * 100) / 100,
           zScore: Math.round(z * 100) / 100,
+          severity: z > 3 ? 'critical' : 'warning',
           recommendation:
             z > 3
               ? 'Highly unusual amount — verify this charge immediately'

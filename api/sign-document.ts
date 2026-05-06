@@ -2,10 +2,29 @@
 // Vercel serverless function: Accepts a drawn signature from the client portal,
 // embeds it into the engagement letter PDF using pdf-lib, stores the signed PDF,
 // and inserts a signatures record.
+//
+// 2026-05-06: added demo branch so the deployed demo (VITE_MODE=demo) can
+// validate the e-sig flow end-to-end without hitting live Supabase. Demo mode
+// returns a mock-success response with no DB write and no PDF storage —
+// the calling client UI behaves as if signing succeeded, but no persistence
+// occurs. Real signing requires VITE_MODE=cloud + a valid live portal_token.
 
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { supabaseAdmin } from './_lib/supabase.js'
 import { PDFDocument, rgb } from 'pdf-lib'
+
+/**
+ * Server-side demo-mode detection. Mirrors the client-side `isDemoMode` check in
+ * src/lib/mode.ts. We can't import the client lib directly (it reads import.meta.env
+ * which doesn't exist in Vercel functions), so we read process.env.VITE_MODE here.
+ *
+ * Important: Vercel makes VITE_* env vars available at build time for the client
+ * bundle, AND at runtime for serverless functions if the var is set in the project.
+ * If unset, default to "cloud" (production-safe).
+ */
+function isServerDemoMode(): boolean {
+  return process.env.VITE_MODE === 'demo'
+}
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') {
@@ -24,6 +43,24 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (!engagementLetterId || !clientId || !portalToken ||
       !signerName || !signerEmail || !signatureImageData) {
     return res.status(400).json({ error: 'Missing required fields' })
+  }
+
+  // ── Demo mode short-circuit ─────────────────────────────────────────────
+  // Returns a mock-success response so the e-sig flow can be exercised in the
+  // deployed demo without needing a live Supabase project. No DB write, no
+  // PDF storage, no email. Client portal UX is identical.
+  if (isServerDemoMode()) {
+    console.log('[sign-document] Demo mode — returning mock signature success', {
+      engagementLetterId,
+      clientId,
+      signerName,
+    })
+    return res.status(200).json({
+      success: true,
+      signedPath: null,
+      demo: true,
+      _note: 'Demo mode — signature not persisted. Set VITE_MODE=cloud for real signing.',
+    })
   }
 
   // Validate portal token
