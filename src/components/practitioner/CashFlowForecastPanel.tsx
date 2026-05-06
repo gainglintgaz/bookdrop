@@ -7,16 +7,44 @@ import {
   TrendingUp, TrendingDown, AlertTriangle,
   Repeat, Gauge, ArrowRight,
 } from 'lucide-react'
+import { LockedFeatureGate, PreviewBanner } from '@/components/shared/LockedFeatureGate'
+
+const FORECAST_REQUIRED_PERIODS = 3
 
 interface Props {
   forecast: CashFlowForecast
+  /** How many periods of parsed statement data are present. Drives Trust Ladder gating. */
+  monthsObserved: number
 }
 
-export function CashFlowForecastPanel({ forecast }: Props) {
+export function CashFlowForecastPanel({ forecast, monthsObserved }: Props) {
   const { forecast: months, recurringIncome, recurringExpenses, runwayMonths, alerts, seasonalPatterns } = forecast
+
+  // Loop 0-1: feature LOCKED — never extrapolate from a single month into a 3-month forecast.
+  // (Per ai-first-principles.md §5 rule 1: no fabricated claims.)
+  if (monthsObserved < 2) {
+    return (
+      <LockedFeatureGate
+        title="Cash Flow Forecast"
+        description="Projects the next 3 months of cash in and out based on recurring patterns. Surfaces runway and seasonal spikes."
+        inputLabel="months of statements"
+        observed={monthsObserved}
+        required={FORECAST_REQUIRED_PERIODS}
+      />
+    )
+  }
+  const inPreview = monthsObserved < FORECAST_REQUIRED_PERIODS
 
   return (
     <div className="space-y-6">
+      {inPreview && (
+        <PreviewBanner
+          observed={monthsObserved}
+          required={FORECAST_REQUIRED_PERIODS}
+          featureName="Forecast"
+        />
+      )}
+
       {/* Runway alert */}
       {runwayMonths !== null && runwayMonths < 6 && (
         <div className={cn(

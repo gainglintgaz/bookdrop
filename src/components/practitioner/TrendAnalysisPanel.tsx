@@ -7,16 +7,44 @@ import {
   TrendingUp, TrendingDown, ArrowRight, AlertTriangle,
   Plus, Minus, BarChart3,
 } from 'lucide-react'
+import { LockedFeatureGate, PreviewBanner } from '@/components/shared/LockedFeatureGate'
+
+const TREND_REQUIRED_PERIODS = 3
 
 interface Props {
   report: TrendReport
+  /** How many periods of parsed statement data are present. Drives Trust Ladder gating. */
+  monthsObserved: number
 }
 
-export function TrendAnalysisPanel({ report }: Props) {
+export function TrendAnalysisPanel({ report, monthsObserved }: Props) {
   const { monthOverMonth, categoryTrends, vendorTrends, newVendors, droppedVendors, alerts, narrative } = report
+
+  // Loop 0-1: feature LOCKED — no fabrication, just honest "needs N more periods"
+  if (monthsObserved < 2) {
+    return (
+      <LockedFeatureGate
+        title="Month-over-Month Trends"
+        description="Compares spending, income, vendors, and categories across months. Spots patterns you'd otherwise miss."
+        inputLabel="months of statements"
+        observed={monthsObserved}
+        required={TREND_REQUIRED_PERIODS}
+      />
+    )
+  }
+  const inPreview = monthsObserved < TREND_REQUIRED_PERIODS
 
   return (
     <div className="space-y-6">
+      {/* Trust Ladder PREVIEW state: sample-size disclosure inline (per ai-first-principles.md §3) */}
+      {inPreview && (
+        <PreviewBanner
+          observed={monthsObserved}
+          required={TREND_REQUIRED_PERIODS}
+          featureName="Trend"
+        />
+      )}
+
       {/* Narrative Summary */}
       <div className="rounded-lg border border-primary/20 bg-primary/5 px-4 py-4">
         <p className="text-sm leading-relaxed text-gray-800">{narrative}</p>
