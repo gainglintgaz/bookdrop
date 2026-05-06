@@ -220,11 +220,83 @@ What this framework intentionally does NOT optimize for:
 
 ---
 
-## 10. Cross-reference
+## 10. AI integration architecture (when you do reach for an LLM)
+
+These rules apply once a project earns the right to call an LLM. Aligned with industry patterns observed at Perplexity Agent API (Finance Search, May 2026), Anthropic's tool-use API, and the AI SDK ecosystem.
+
+### 10.1 Stable tool interface; providers swappable behind it
+
+Define an internal interface for every AI capability **before** picking a provider. Providers go behind the interface, not above it.
+
+```
+// Interface (lives in your codebase forever)
+interface CategorizeNovelVendor {
+  (input: { description: string; amount: number; context: string[] }):
+    Promise<{ category: string; confidence: number; reasoning: string; sourceCitations: string[] }>
+}
+
+// Implementations (any one can be active per env var; swap without touching the engine)
+const grokImpl: CategorizeNovelVendor = ...    // grok-4.3-latest
+const claudeImpl: CategorizeNovelVendor = ...  // claude-sonnet-4-7
+const localImpl: CategorizeNovelVendor = ...   // pure heuristics, no API call
+```
+
+The stable interface protects you from: API deprecations (`grok-4-1-fast` retiring May 2026), pricing shifts that change the cost-per-correct-answer winner, vendor outages, and "we want to try a different model for this query shape" experiments.
+
+**Rule:** model name strings live in env vars (`AI_CATEGORIZATION_MODEL`), never in source. Defaults are versioned aliases (`grok-4.3-latest`, NOT `grok-4`). Date-pinned models (`claude-sonnet-4-7-20251022`) only when reproducibility is contractually required.
+
+### 10.2 Tier the work; route the model
+
+Use multiple models for different query shapes. Don't pay reasoning-tier cost for simple lookups; don't get reasoning-tier accuracy from a fast/cheap model on a multi-step task.
+
+| Query shape | Tier | Examples |
+|---|---|---|
+| **Look up + verify** (real-time, structured retrieval) | Fast / cheap | "Has this vendor crossed the $600 1099 threshold this year?" — local SQL aggregate; no LLM needed. |
+| **Classify a single novel input** | Fast / cheap LLM | "Categorize this Costco transaction" — tiny prompt, under 1s, sub-cent cost. |
+| **Single-entity lookup with light web context** | Mid-tier | "Why did this Apple charge spike vs. last quarter?" — one model call with retrieval. |
+| **Multi-step reasoning + cross-document synthesis** | Reasoning tier | "Find the off-by-$X delta in this reconciliation across these three statements" — multi-step, expensive, worth it. |
+
+Default to the cheapest tier that produces correct output. Escalate only when the cheap tier returns low-confidence or contradicts ground truth (corrections, k=N aggregates, source documents).
+
+### 10.3 Tool-call billing tracking
+
+When an integration charges per invocation **separately** from token usage (Perplexity-style: $5/1k tool calls + token billing on top), track both meters in your usage telemetry.
+
+For BookDrop or any project: log `{ provider, tool_name, invocation_cost_cents, token_input_cost_cents, token_output_cost_cents, query_shape, outcome }` per call. Aggregate weekly. The signal you're looking for is **cost per correct answer** (tool calls × cost ÷ accuracy on a labeled test set), not raw spend. Lowest-cost provider with sub-threshold accuracy is the wrong winner; highest-accuracy provider with insanely high per-call cost is also wrong.
+
+### 10.4 Citations on every claim
+
+Every AI-generated label, claim, or aggregate must expose its source. Three implementation patterns, in order of preference:
+
+1. **Verbatim citation** — the AI quote is a literal substring of a real source document. Validate via substring check (per `data-flywheel.md` §8.2). Reject and retry if not.
+2. **Structured citation** — the AI references a specific row id (categorization rule #12, transaction id `txn_abc`, k=N aggregate spanning users [a, b, c]). UI links the user to that row.
+3. **Computed citation** — the AI references a deterministic formula (z-score = (amount − mean) / stdDev with mean = $X and stdDev = $Y). UI shows the formula + inputs.
+
+Anti-pattern: "Confidence: 87%" with no chain of evidence. The user should be able to click into any number, label, or claim and see the chain.
+
+### 10.5 Benchmark before you publish a default
+
+When you commit to a model + configuration as the default for a query shape, run a benchmark against a labeled test set first. Document the benchmark in code + the per-project worksheet (see `DATA_FLYWHEEL.md` for BookDrop's instance).
+
+The benchmark is the source of authority for the default. If a provider claims `model X beats model Y on $TASK`, run the benchmark on your real data before believing them. Vendor-published benchmarks are rarely on your task; rarely on your distribution.
+
+Rule: no `// recommended default` comment in code without a corresponding benchmark commit + a `lessons.md` entry pointing to it.
+
+### 10.6 No silent fallback chains
+
+If the primary model fails or is rate-limited, **either** surface a real error to the user **or** fall back to a labeled lower-tier path that's clearly marked.
+
+Anti-pattern: "We tried model A; it failed; we tried model B; it returned a worse-quality answer; the user sees no indication that we degraded." That's the bandage path — the user sees a confident-looking answer they can't tell came from a fallback.
+
+Correct pattern: render with a Confidence badge that reflects the path taken. "Categorized using local heuristics (LLM unavailable)" is honest copy. "Categorized" with no source is fabrication.
+
+---
+
+## 11. Cross-reference
 
 This rule pairs with `data-flywheel.md` (the operational counterpart):
 
-- `ai-first-principles.md` (this file) — *how to think about AI*: when it's centered, when it unlocks, what it can claim
+- `ai-first-principles.md` (this file) — *how to think about AI*: when it's centered, when it unlocks, what it can claim, how to integrate when you reach for one
 - `data-flywheel.md` — *what data to collect*: schemas, contribution types, privacy rules, moderation, the substring-validation pattern in depth
 
 Use both together. Without principles, the data flywheel becomes surveillance. Without the flywheel, principles become theater.
