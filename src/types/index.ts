@@ -79,6 +79,72 @@ export interface DocumentUpload {
   storage_path: string
   file_size_bytes: number
   uploaded_at: string
+  // Migration 004 — AI-first pivot: auto-categorization metadata
+  auto_categorized_at?: string | null
+  auto_categorization_confidence?: 'high' | 'medium' | 'low' | null
+  client_confirmed_at?: string | null
+  parsed_summary?: ParsedStatementSummary | null
+  categorization_summary?: UploadCategorizationSummary | null
+}
+
+/** Lightweight summary of a parsed bank/CC statement, stored on the upload row. */
+export interface ParsedStatementSummary {
+  bankName: string | null
+  accountLast4: string | null
+  openingBalance: number | null
+  closingBalance: number | null
+  totalCredits: number
+  totalDebits: number
+  transactionCount: number
+}
+
+/** Lightweight summary of categorization across one upload. */
+export interface UploadCategorizationSummary {
+  totalCategorized: number
+  highConfidence: number
+  mediumConfidence: number
+  lowConfidence: number
+  byCategory: Record<string, number>
+  flagsCount: number
+}
+
+/** Migration 004 — Phase A flywheel: per-correction record. */
+export interface CategorizationCorrection {
+  id: string
+  bookkeeper_id: string
+  client_id: string
+  upload_id: string | null
+  transaction_date: string | null
+  transaction_amount_cents: number | null
+  vendor_normalized: string | null
+  description_raw: string | null
+  original_category: string | null
+  corrected_category: string
+  original_subcategory: string | null
+  corrected_subcategory: string | null
+  reason: string | null
+  status: 'applied' | 'undone' | 'auto_promoted'
+  applied_at: string
+  original_confidence: 'high' | 'medium' | 'low' | null
+}
+
+/** Migration 004 — Phase A flywheel: per-cycle outcome captured at sign-off. */
+export interface CloseCycleOutcome {
+  id: string
+  bookkeeper_id: string
+  client_id: string
+  period_year: number
+  period_month: number
+  hours_saved_minutes: number
+  accuracy_pct: number | null
+  reconciliation_match_pct: number | null
+  total_categorized: number
+  total_corrected: number
+  total_anomalies_flagged: number
+  total_anomalies_real: number
+  notes: string | null
+  worth_it: boolean | null
+  signed_off_at: string
 }
 
 export interface ReminderSchedule {
