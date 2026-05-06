@@ -829,7 +829,7 @@ function AnalysisTab({
               Automates manual categorization work.
             </p>
           </div>
-          <CategorizationPanel report={categorizationReport} />
+          <CategorizationPanel report={categorizationReport} clientId={client.id} />
         </div>
       ))}
 
@@ -847,7 +847,6 @@ function AnalysisTab({
 
       {section === 'forecast' && (!hasParsed ? emptyGate : cashForecast && (
         <div>
-          {!hasEnoughForTrends && limitedDataBanner}
           <div className="mb-4">
             <h3 className="text-sm font-semibold text-gray-900">Cash Flow Forecast</h3>
             <p className="mt-0.5 text-xs text-gray-500">
@@ -855,7 +854,7 @@ function AnalysisTab({
               Predicts cash crunches before they happen.
             </p>
           </div>
-          <CashFlowForecastPanel forecast={cashForecast} />
+          <CashFlowForecastPanel forecast={cashForecast} monthsObserved={parsedStatements.length} />
         </div>
       ))}
 
@@ -903,14 +902,13 @@ function AnalysisTab({
 
       {section === 'trends' && (!hasParsed ? emptyGate : trendReport && (
         <div>
-          {!hasEnoughForTrends && limitedDataBanner}
           <div className="mb-4">
             <h3 className="text-sm font-semibold text-gray-900">Month-over-Month Trends</h3>
             <p className="mt-0.5 text-xs text-gray-500">
               Compares spending, income, vendors, and categories across months. Spots patterns you'd otherwise miss.
             </p>
           </div>
-          <TrendAnalysisPanel report={trendReport} />
+          <TrendAnalysisPanel report={trendReport} monthsObserved={parsedStatements.length} />
         </div>
       ))}
 

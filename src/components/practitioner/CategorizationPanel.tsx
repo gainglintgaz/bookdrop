@@ -3,13 +3,19 @@
 
 import { cn } from '@/lib/utils'
 import type { CategorizationReport, CategorizedTransaction } from '@/lib/categorization-engine'
+import { CATEGORIES } from '@/lib/categorization-engine'
+import { recordCorrection } from '@/lib/categorization-corrections'
+import { useAuthStore } from '@/stores/auth.store'
 import {
   CheckCircle, Tag, Receipt,
   DollarSign, Flag, Filter, ChevronDown,
+  Pencil, Check, X as XIcon,
 } from 'lucide-react'
 import { useState } from 'react'
 import { Provenance } from '@/components/shared/Provenance'
 import type { ProvenanceData } from '@/types/provenance'
+
+const ALL_CATEGORIES = Object.values(CATEGORIES)
 
 /**
  * Build provenance metadata for a categorized transaction.
@@ -50,18 +56,49 @@ function categorizationProvenance(t: CategorizedTransaction): ProvenanceData {
 
 interface Props {
   report: CategorizationReport
+  /** Client this categorization belongs to. Required to scope corrections. */
+  clientId?: string
 }
 
-export function CategorizationPanel({ report }: Props) {
-  const { transactions, summary } = report
+export function CategorizationPanel({ report, clientId }: Props) {
+  const { transactions: initialTxns, summary } = report
   const [showAll, setShowAll] = useState(false)
   const [filterCategory, setFilterCategory] = useState<string | null>(null)
+  const [overrides, setOverrides] = useState<Record<number, string>>({})
+  const bookkeeperId = useAuthStore(state => state.bookkeeper?.id ?? null)
+
+  // Apply local overrides on top of the engine's output. Once a correction is
+  // recorded, the row stays visually corrected even if the engine re-runs.
+  const transactions = initialTxns.map((t, i) =>
+    overrides[i] ? { ...t, category: overrides[i] } : t,
+  )
 
   const filtered = filterCategory
     ? transactions.filter(t => t.category === filterCategory)
     : transactions
 
   const displayed = showAll ? filtered : filtered.slice(0, 20)
+
+  async function handleCorrection(idx: number, txn: CategorizedTransaction, newCategory: string) {
+    if (newCategory === txn.category) return
+    // Optimistic UI update first
+    setOverrides(prev => ({ ...prev, [idx]: newCategory }))
+    if (!bookkeeperId || !clientId) {
+      // Demo without an authenticated bookkeeper still shows the override —
+      // we simply don't persist. Honest copy: this is a preview, not a write.
+      console.warn('[CategorizationPanel] Skipping correction write (no bookkeeperId/clientId)')
+      return
+    }
+    await recordCorrection({
+      bookkeeperId,
+      clientId,
+      vendorNormalized: txn.matchedVendor ?? null,
+      descriptionRaw: txn.originalDescription,
+      originalCategory: txn.category,
+      correctedCategory: newCategory,
+      originalConfidence: txn.confidence,
+    })
+  }
 
   return (
     <div className="space-y-6">
@@ -173,10 +210,15 @@ export function CategorizationPanel({ report }: Props) {
                   </td>
                   <td className="px-4 py-2.5">
                     <div className="flex items-center gap-1.5">
-                      <span className="text-gray-700">{t.category}</span>
+                      <CategoryEditor
+                        index={i}
+                        currentCategory={t.category}
+                        wasCorrected={i in overrides}
+                        onCorrect={(newCat) => handleCorrection(i, t, newCat)}
+                      />
                       <Provenance data={categorizationProvenance(t)} variant="icon-only" />
                     </div>
-                    {t.subcategory && (
+                    {t.subcategory && !(i in overrides) && (
                       <p className="text-[10px] text-gray-400">{t.subcategory}</p>
                     )}
                   </td>
@@ -230,6 +272,76 @@ export function CategorizationPanel({ report }: Props) {
           </button>
         )}
       </div>
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CategoryEditor — inline correction UI
+// ─────────────────────────────────────────────────────────────────────────────
+// Click the category to open a dropdown. Pick a new one to record a correction.
+// "wasCorrected" badge = subtle visual cue that the bookkeeper trained the
+// system on this row. Aligned with DATA_FLYWHEEL.md §C: corrections must
+// land in-flow, not in a separate UX, so the highest-density training signal
+// is captured every time a bookkeeper would have manually fixed something.
+
+interface CategoryEditorProps {
+  index: number
+  currentCategory: string
+  wasCorrected: boolean
+  onCorrect: (newCategory: string) => void | Promise<void>
+}
+
+function CategoryEditor({ index, currentCategory, wasCorrected, onCorrect }: CategoryEditorProps) {
+  const [open, setOpen] = useState(false)
+
+  if (!open) {
+    return (
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className={cn(
+          'group inline-flex items-center gap-1 rounded px-1 py-0.5 text-gray-700 transition-colors hover:bg-gray-100',
+          wasCorrected && 'bg-emerald-50 text-emerald-800 hover:bg-emerald-100',
+        )}
+        title={wasCorrected ? 'You corrected this — click to change again' : 'Click to correct'}
+        aria-label={`Category: ${currentCategory}. Click to change.`}
+      >
+        <span>{currentCategory}</span>
+        {wasCorrected ? (
+          <Check className="h-3 w-3 text-emerald-600" aria-hidden="true" />
+        ) : (
+          <Pencil className="h-3 w-3 opacity-0 transition-opacity group-hover:opacity-50" aria-hidden="true" />
+        )}
+      </button>
+    )
+  }
+
+  return (
+    <div className="relative inline-flex items-center gap-1">
+      <select
+        value={currentCategory}
+        autoFocus
+        aria-label={`Reassign category for row ${index + 1}`}
+        onChange={async (e) => {
+          await onCorrect(e.target.value)
+          setOpen(false)
+        }}
+        onBlur={() => setOpen(false)}
+        className="rounded border border-gray-300 bg-white px-1.5 py-0.5 text-xs text-gray-900 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+      >
+        {ALL_CATEGORIES.map(cat => (
+          <option key={cat} value={cat}>{cat}</option>
+        ))}
+      </select>
+      <button
+        type="button"
+        onClick={() => setOpen(false)}
+        className="rounded p-0.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+        aria-label="Cancel correction"
+      >
+        <XIcon className="h-3 w-3" />
+      </button>
     </div>
   )
 }
