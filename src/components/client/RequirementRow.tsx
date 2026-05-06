@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { cn, formatFileSize, formatDocType } from '@/lib/utils'
 import { FileDropzone } from '@/components/client/FileDropzone'
 import type { RequirementWithUploads } from '@/types'
-import { CheckCircle, FileText, AlertCircle, Loader2, X } from 'lucide-react'
+import { CheckCircle, FileText, AlertCircle, Loader2, X, Sparkles } from 'lucide-react'
 
 interface RequirementRowProps {
   requirement: RequirementWithUploads
@@ -74,6 +74,36 @@ export function RequirementRow({ requirement, onUpload, uploading }: Requirement
           <span className="shrink-0 text-xs text-gray-400">
             {formatFileSize(latestUpload.file_size_bytes)}
           </span>
+        </div>
+      )}
+
+      {/*
+        AI-first pivot D.1 — categorization receipt
+        Shown only for uploads where auto-categorization actually ran.
+        Honest counts come from the engine's own summary (no fabrication).
+      */}
+      {latestUpload?.categorization_summary && latestUpload.parsed_summary && (
+        <div className="mb-3 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm">
+          <div className="flex items-center gap-1.5">
+            <Sparkles className="h-3.5 w-3.5 text-emerald-600" />
+            <span className="font-medium text-emerald-800">
+              We classified {latestUpload.categorization_summary.totalCategorized} of {latestUpload.parsed_summary.transactionCount} transactions
+            </span>
+          </div>
+          {latestUpload.categorization_summary.lowConfidence > 0 && (
+            <p className="mt-1 text-xs text-emerald-700">
+              {latestUpload.categorization_summary.lowConfidence} need review by your bookkeeper.
+              {' '}
+              <span className="text-emerald-600/80">
+                You don't have to do anything — this is just a receipt.
+              </span>
+            </p>
+          )}
+          {latestUpload.categorization_summary.lowConfidence === 0 && (
+            <p className="mt-1 text-xs text-emerald-700">
+              Your bookkeeper will review and confirm before close.
+            </p>
+          )}
         </div>
       )}
 

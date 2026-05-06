@@ -8,14 +8,15 @@ import { fetchClientByToken, uploadDocumentFile, notifyBookkeeperOfUpload, fetch
 import { tenantConfig } from '@/lib/tenant.config'
 import { formatPeriod, cn } from '@/lib/utils'
 import { computeSubmissionStatus, getMissingDocuments } from '@/types'
-import type { ClientPortalData, EngagementLetterWithSignature } from '@/types'
+import type { ClientPortalData, EngagementLetterWithSignature, DocumentUpload } from '@/types'
 import { RequirementRow } from '@/components/client/RequirementRow'
 import { EngagementLetterRow } from '@/components/portal/EngagementLetterRow'
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
 import { ErrorState } from '@/components/shared/ErrorState'
 import { generateUploadDeadlineICS, getNextDeadline } from '@/lib/calendar'
 import { formatFileSize } from '@/lib/utils'
-import { CheckCircle, Clock, FileText, Calendar, Upload, History, AlertCircle, FileSignature } from 'lucide-react'
+import { autoCategorizeUpload } from '@/lib/auto-categorize-upload'
+import { CheckCircle, Clock, FileText, Calendar, Upload, History, AlertCircle, FileSignature, Sparkles } from 'lucide-react'
 
 export function UploadPage() {
   const { token } = useParams<{ token: string }>()
@@ -60,6 +61,9 @@ export function UploadPage() {
   const handleUpload = useCallback(async (requirementId: string, file: File) => {
     if (!portalData) return
 
+    const requirement = portalData.requirements.find(r => r.id === requirementId)
+    const docType = requirement?.doc_type ?? 'other'
+
     setUploadingRequirementId(requirementId)
     try {
       const upload = await uploadDocumentFile(
@@ -81,14 +85,34 @@ export function UploadPage() {
         token ?? '',
       )
 
-      // Update local state with new upload
+      // ── AI-first pivot D.1: auto-categorize at upload moment ─────────────
+      // Run the parser + categorization in parallel with the visible UI update.
+      // Failures here NEVER block the upload (per ai-first-principles.md §5
+      // anti-fabrication rule 6 — silent failure surfaces a real placeholder).
+      let enriched: DocumentUpload = upload
+      try {
+        const result = await autoCategorizeUpload(file, docType)
+        if (result) {
+          enriched = {
+            ...upload,
+            auto_categorized_at: new Date().toISOString(),
+            auto_categorization_confidence: result.aggregateConfidence,
+            parsed_summary: result.parsedSummary,
+            categorization_summary: result.categorizationSummary,
+          }
+        }
+      } catch (err) {
+        console.warn('[UploadPage] Auto-categorization threw — upload still saved:', err)
+      }
+
+      // Update local state with new upload (enriched if categorization ran)
       setPortalData(prev => {
         if (!prev) return prev
         return {
           ...prev,
           requirements: prev.requirements.map(req =>
             req.id === requirementId
-              ? { ...req, uploads: [...req.uploads, upload] }
+              ? { ...req, uploads: [...req.uploads, enriched] }
               : req,
           ),
         }
@@ -96,7 +120,7 @@ export function UploadPage() {
     } finally {
       setUploadingRequirementId(null)
     }
-  }, [portalData])
+  }, [portalData, token])
 
   // ─── LOADING STATE ──────────────────────────────────────────────────────────
   if (loading) {
