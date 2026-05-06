@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { CheckCircle, FileSignature, Loader2, ExternalLink } from 'lucide-react'
 import { SignatureCanvas } from './SignatureCanvas'
+import { ESignConsentScreen, type ConsentAcceptance } from './ESignConsentScreen'
 import { supabase } from '@/lib/supabase'
 import type { EngagementLetterWithSignature } from '@/types'
 
@@ -13,6 +14,16 @@ interface EngagementLetterRowProps {
   onSigned: () => void
 }
 
+/**
+ * Three states drive this component:
+ *   • idle            — initial render, "View document" + "Begin signing" button
+ *   • consenting      — ESIGN consent screen open (Block 3 E1)
+ *   • drawing         — consent accepted, SignatureCanvas open
+ *
+ * If letter is already signed, render the "Signed" pill and only the View button.
+ */
+type Stage = 'idle' | 'consenting' | 'drawing'
+
 export function EngagementLetterRow({
   letter,
   clientId,
@@ -21,6 +32,8 @@ export function EngagementLetterRow({
   signerEmail,
   onSigned,
 }: EngagementLetterRowProps) {
+  const [stage, setStage] = useState<Stage>('idle')
+  const [consent, setConsent] = useState<ConsentAcceptance | null>(null)
   const [signatureData, setSignatureData] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -39,9 +52,25 @@ export function EngagementLetterRow({
     }
   }
 
+  const handleConsentAccepted = (c: ConsentAcceptance) => {
+    setConsent(c)
+    setStage('drawing')
+  }
+
+  const handleConsentCancelled = () => {
+    setStage('idle')
+    setConsent(null)
+  }
+
   const handleSubmitSignature = async () => {
     if (!signatureData) {
       setError('Please draw your signature above')
+      return
+    }
+    if (!consent) {
+      // Defensive: shouldn't be reachable since the canvas only renders post-consent.
+      setError('Consent required before signing')
+      setStage('consenting')
       return
     }
     setSubmitting(true)
@@ -57,11 +86,24 @@ export function EngagementLetterRow({
           signerName,
           signerEmail,
           signatureImageData: signatureData,
+          // Block 3 E1: include consent metadata in every signing request
+          consentDisclosureVersion: consent.version,
+          consentDisclosureAgreedAt: consent.agreedAt,
         }),
       })
       const data = await res.json()
       if (!res.ok) {
-        setError(data.error ?? 'Failed to submit signature')
+        // Block 3 E1: surface rate limit + storage failure messages clearly
+        if (res.status === 429) {
+          const retryAfter = res.headers.get('Retry-After')
+          setError(
+            `Too many signing attempts. Please try again in ${
+              retryAfter ? `${Math.ceil(Number(retryAfter) / 60)} minutes` : 'an hour'
+            }.`
+          )
+        } else {
+          setError(data.error ?? 'Failed to submit signature')
+        }
         return
       }
       onSigned()
@@ -97,11 +139,41 @@ export function EngagementLetterRow({
         </div>
       </div>
 
-      {!isSigned && (
+      {/* idle: prompt to begin */}
+      {!isSigned && stage === 'idle' && (
         <div className="space-y-3">
           <p className="text-xs text-gray-500">
-            Please review the document above, then draw your signature below.
+            Please review the document above, then click below to begin signing. You'll see a brief
+            electronic-signature disclosure first.
           </p>
+          <button
+            type="button"
+            onClick={() => setStage('consenting')}
+            className="flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary/90"
+          >
+            <FileSignature className="h-3.5 w-3.5" />
+            Begin Signing
+          </button>
+        </div>
+      )}
+
+      {/* consenting: ESIGN/UETA consent screen */}
+      {!isSigned && stage === 'consenting' && (
+        <ESignConsentScreen
+          onAccept={handleConsentAccepted}
+          onCancel={handleConsentCancelled}
+          documentLabel={letter.label}
+        />
+      )}
+
+      {/* drawing: consent accepted, capture signature */}
+      {!isSigned && stage === 'drawing' && (
+        <div className="space-y-3">
+          <div className="rounded border-l-2 border-emerald-500 bg-emerald-50/40 px-3 py-2">
+            <p className="text-xs text-emerald-800">
+              ✓ Disclosure accepted. Now draw your signature below.
+            </p>
+          </div>
           <SignatureCanvas
             onSignature={setSignatureData}
             disabled={submitting}
@@ -109,18 +181,28 @@ export function EngagementLetterRow({
           {error && (
             <p className="text-xs text-red-600">{error}</p>
           )}
-          <button
-            type="button"
-            onClick={handleSubmitSignature}
-            disabled={submitting || !signatureData}
-            className="flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {submitting ? (
-              <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Submitting...</>
-            ) : (
-              <><FileSignature className="h-3.5 w-3.5" /> Sign Document</>
-            )}
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleSubmitSignature}
+              disabled={submitting || !signatureData}
+              className="flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {submitting ? (
+                <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Submitting...</>
+              ) : (
+                <><FileSignature className="h-3.5 w-3.5" /> Sign Document</>
+              )}
+            </button>
+            <button
+              type="button"
+              onClick={handleConsentCancelled}
+              disabled={submitting}
+              className="text-xs text-gray-500 hover:underline disabled:opacity-50"
+            >
+              Cancel
+            </button>
+          </div>
         </div>
       )}
     </div>
