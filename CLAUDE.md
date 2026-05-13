@@ -1,6 +1,9 @@
 # CLAUDE.md — BookkeeperPortal
 ## Read this + CLAUDE_AUTONOMY_PROTOCOL.md before every session
 
+## Intelligence Feed (check BEFORE choosing what to build)
+Read [INTEL_FEED.md](./INTEL_FEED.md) — auto-routed findings from the intelligence engine. If there are PENDING items, present them to Victor before starting other work. Format: "You have {N} pending intel items for BookDrop. Here's the top priority: {title}. Want to act on this, or work on something else?"
+
 ---
 
 ## WHAT WE'RE BUILDING

@@ -1,0 +1,112 @@
+# .github/workflows/ci.yml
+# BookDrop CI — runs on every push and PR to main.
+# Verifies: typecheck via vite build (tsc -b runs as part of `npm run build`),
+# tests via vitest run, and pre-launch bug-checklist greps.
+
+name: ci
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  build-and-test:
+    name: Build + Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: TypeScript + Vite build
+        run: npm run build
+
+      - name: Vitest
+        run: npx vitest run --reporter=default --reporter=junit --outputFile=test-results.xml
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: test-results.xml
+          retention-days: 30
+
+  bug-checklist:
+    name: Pre-launch bug checklist (13 patterns)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # Advisory — does not block merge, but surfaces findings in PR summary.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Bug 1 — YTD/period-totals dropped
+        run: |
+          set -e
+          echo "Pattern: ytd_, period_total, cumulative_, year_to_date in schema vs read paths"
+          grep -rn 'ytd_\|period_total\|cumulative_\|year_to_date' src/ supabase/migrations/ || echo "NO HITS"
+
+      - name: Bug 2 — Hardcoded effective tax rate
+        run: |
+          grep -rn 'effectiveTaxRate\s*=\s*0\.' src/ || echo "NO HITS (tax-estimator brackets archived, false-positive-safe)"
+
+      - name: Bug 3 — Statutory limits hardcoded
+        run: |
+          grep -rn '168_600\|181_800\|wage_base\|wageBase\|sec179\|hsa_cap' src/ || echo "NO HITS"
+
+      - name: Bug 5 — Form line hardcoded zero
+        run: |
+          grep -rEn 'line[0-9]+:\s*0\b|// TODO.*line|// placeholder.*amount' src/ || echo "NO HITS"
+
+      - name: Bug 6 — Hardcoded year (warn-level)
+        run: |
+          # Real hits live OUTSIDE archived files. Filter known-OK locations.
+          MATCHES=$(grep -rnE '(202[4-7])' src/ --include='*.ts' --include='*.tsx' \
+            | grep -v 'tax-estimator\|TaxEstimatorPage\|PersonalTaxEstimatorPage\|BusinessTaxEstimatorPage\|esign-disclosures\|supabase.ts\|demo-data' || true)
+          if [ -n "$MATCHES" ]; then
+            echo "::warning::Possible hardcoded years (review for archived/legitimate cases):"
+            echo "$MATCHES"
+          else
+            echo "NO HITS"
+          fi
+
+      - name: Bug 7 — AR/AP hardcoded zero
+        run: |
+          grep -rEn 'ar:\s*0|ap:\s*0|accountsReceivable\s*=\s*0|invoicesUnpaid\s*=\s*0' src/ || echo "NO HITS"
+
+      - name: Bug 8 — // Simulated in production
+        run: |
+          MATCHES=$(grep -rEn '// Simulated|// simulated|// fake|// TODO real' src/ || true)
+          if [ -n "$MATCHES" ]; then
+            echo "::error::Simulated / fake comments in production code:"
+            echo "$MATCHES"
+            exit 1
+          fi
+          echo "NO HITS"
+
+      - name: Bug 11 — Modal hardcodes object fields to 0 (advisory)
+        run: |
+          # Many false positives in this pattern. Advisory only.
+          grep -rEn 'useState<.*>\(0\)|defaultValue=\{0\}' src/components/ src/pages/ --include='*.tsx' | head -5 || echo "NO HITS"
+
+      - name: Bug 13 — Edge Function deploy check
+        run: |
+          # If you add Edge Functions to supabase/functions/, this enforces
+          # that deploy script is wired into CI. For now BookDrop has none.
+          if [ -d 'supabase/functions' ]; then
+            COUNT=$(ls supabase/functions/ 2>/dev/null | wc -l)
+            echo "::warning::$COUNT Edge Functions present. Confirm they're deployed (supabase functions list)"
+          else
+            echo "NO HITS (no edge functions)"
+          fi

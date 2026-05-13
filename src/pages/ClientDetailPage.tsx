@@ -271,6 +271,14 @@ export function ClientDetailPage() {
             {copied ? 'Copied!' : 'Copy portal link'}
           </button>
           <Link
+            to={`/clients/${client.id}/tearsheet`}
+            className="flex items-center gap-1.5 rounded-md border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50"
+            title="One-page client snapshot"
+          >
+            <FileBarChart className="h-3.5 w-3.5" />
+            Tearsheet
+          </Link>
+          <Link
             to={`/clients/${client.id}/edit`}
             className="flex items-center gap-1.5 rounded-md border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50"
           >

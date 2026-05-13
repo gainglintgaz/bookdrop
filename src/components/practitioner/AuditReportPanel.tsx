@@ -34,9 +34,9 @@ function missingRecurringProvenance(m: MissingRecurring): ProvenanceData {
   return {
     type: 'computed',
     summary: `Missing expected recurring "${m.description}"`,
-    detail: `Recurring detection looked for a transaction matching this vendor near ${m.expectedDate}. Last seen on ${m.lastSeen}.`,
+    detail: `This vendor appeared in last month's transactions but not this month's. Last seen on ${m.lastSeen}.`,
     confidence: m.severity === 'critical' ? 'high' : 'medium',
-    formula: 'recurringDetector(vendor, cycleDays=25..32, lastSeenDate)',
+    formula: 'vendorsInPrevMonth − vendorsInCurrentMonth (fuzzy match ≥ 0.7)',
     citations: [
       { label: `Vendor pattern: ${m.description}`, meta: `Last seen: ${m.lastSeen}` },
     ],

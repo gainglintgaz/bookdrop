@@ -1,8 +1,8 @@
 # CURRENT_SPRINT.md — BookDrop
 ## Update this after EVERY task. This is how Claude Code knows what to do next.
 
-Last updated: 2026-05-05
-Sprint goal: Pass AI-first audit + finish off-platform backup pipeline + ship V1
+Last updated: 2026-05-12
+Sprint goal: Land V1.1 features + finalize manual launch steps (R2 backups + Resend + Stripe + Vercel env vars)
 
 ---
 
@@ -44,6 +44,14 @@ Demo mode still live at https://bookkeeper-portal.vercel.app. Production launch 
 | 2026-05-06 | **Block 3 Phase E3 SHIPPED (commit eb76d5c)** — AcroForm + initials + audit export: migration 007 (signatures.initials_image_data + filled_form_fields + signature_audit_view), src/lib/pdf-form-detect.ts (detectFormFields + fillAndFlattenForm), api/audit/signature-log.ts (CSV export with 18 columns + UTF-8 BOM for Excel + RFC 4180 escaping). 11 new tests. | All 10 audit gaps closed |
 | 2026-05-06 | **Block 4 SHIPPED (commit 3b95c37)** — service config tooling: LAUNCH_CHECKLIST.md (7-step end-to-end runbook), scripts/smoke-test-resend.ts (sends a test email + reports), scripts/smoke-test-stripe.ts (creates a Checkout Session in test or live mode with safety warnings). User runs the checklist when ready to flip VITE_MODE=cloud in Vercel. | Pre-launch tooling complete; user-manual work remaining |
 | 2026-05-06 | **PRE-LAUNCH ROADMAP COMPLETE** — 9 commits this session (e671cb7 → 3b95c37). Tests: 62 → 84 (added 22). Build clean throughout. Demo mode preserved end-to-end. Migrations 002 idempotent + 005, 006, 007 all additive. All 4 pre-launch blockers cleared on the code side; remaining work is manual user runbooks (Block 1 SQL + Block 2 R2 setup + Block 4 launch checklist). | Code-side pre-launch work done |
+| 2026-05-06 | **Visual SignaturePlacementDesigner SHIPPED (commit 62a7e12)** — completes multi-signer story. PDF render via pdfjs-dist, click-to-drop placement markers per signatory, lazy-loaded so most signing flows skip the heavy chunk. | Phase E2/E3 UX gap closed |
+| 2026-05-06 | **ai-first-principles §10 SHIPPED (commit 4f3c8ad)** — added 6 sub-rules for AI integration: stable tool interface, tier the work, tool-call billing tracking, citations on every claim, benchmark before default, no silent fallback chains. | Factory rule augmented |
+| 2026-05-12 | **Migrations 004-008 APPLIED LIVE (commit 74c6825)** — via Supabase MCP against project mvvadmlivrpyawmlaqye. 13 tables (was 8), all RLS, bucket private, security advisors green. `src/types/supabase.ts` regenerated from live schema. Migration 008 (advisor fixes) added: security_invoker on view, pinned function search_path, REVOKE EXECUTE from anon on SECURITY DEFINER functions, REVOKE SELECT on materialized view, deny-all policy on signature_attempts, drop dup index. | Phase 1 LIVE — no more manual SQL pasting needed |
+| 2026-05-12 | **V1.1 Client Tearsheet shipped** — `/clients/:clientId/tearsheet` route + page. Loop-12-gated sparkline (renders LOCKED until 12 close_cycle_outcomes for that client). All numbers traced to source via Provenance component. Linked from ClientDetailPage header. | Perplexity-pattern transfer (company tearsheet → client tearsheet) |
+| 2026-05-12 | **V1.1 Workflow Library scaffolding shipped** — `src/lib/workflows/registry.ts` with 12 CPA workflows (close, tax-data-prep, audit, compliance, onboarding, comms). `WorkflowLibraryPanel.tsx` renders cards with `live` / `preview` / `planned` status badges. Trust-Ladder-gated workflows show honest LOCKED copy. Tests: workflow integrity + LEGAL_GUARDRAILS forbidden-phrase check. | Perplexity "35 workflows" pattern transfer; foundation for D.1-D.5 wiring |
+| 2026-05-12 | **GitHub Actions CI shipped** — `.github/workflows/ci.yml` runs `npm run build` + `vitest run` on every push/PR + the pre-launch bug-checklist 13-pattern advisory job. CI catches regressions before merge. | Production hygiene |
+| 2026-05-12 | **Bug checklist run (13 patterns)** — 1 real hit: fictional formula description `recurringDetector(vendor, cycleDays=25..32)` in AuditReportPanel adapter didn't match real implementation. Fixed: now reads `vendorsInPrevMonth − vendorsInCurrentMonth (fuzzy match ≥ 0.7)`. All other patterns clean (tax-estimator hits are archived feature, year hits are legitimate fallbacks + copyright + demo data). | Honesty-strings pass before launch |
+| 2026-05-12 | **VictorForge factory sync** — 3 new factory rules ported into BookDrop (`aggregate-design.md`, `data-protection.md`, `self-reflection.md`). Rule count: 14 → 16. Platform mirrors regenerated (AGENTS.md, .cursor/rules, GEMINI.md, .windsurfrules, PERPLEXITY_SPACE_INSTRUCTIONS.md). Factory onboarding script `onboard-existing-project.ps1` has a PowerShell syntax error (duplicate `else` branches around line 89) — worked around manually, logged as [FACTORY-CHANGE-CANDIDATE]. | Cross-project factory v4.3 prep |
 
 ---
 

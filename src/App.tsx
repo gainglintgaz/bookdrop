@@ -16,6 +16,7 @@ const BusinessOwnerDashboard = lazy(() => import('@/pages/BusinessOwnerDashboard
 const ClientsPage = lazy(() => import('@/pages/ClientsPage').then(m => ({ default: m.ClientsPage })))
 const AddClientPage = lazy(() => import('@/pages/AddClientPage').then(m => ({ default: m.AddClientPage })))
 const ClientDetailPage = lazy(() => import('@/pages/ClientDetailPage').then(m => ({ default: m.ClientDetailPage })))
+const ClientTearsheetPage = lazy(() => import('@/pages/ClientTearsheetPage').then(m => ({ default: m.ClientTearsheetPage })))
 const SettingsPage = lazy(() => import('@/pages/SettingsPage').then(m => ({ default: m.SettingsPage })))
 const EditClientPage = lazy(() => import('@/pages/EditClientPage').then(m => ({ default: m.EditClientPage })))
 const HelpPage = lazy(() => import('@/pages/HelpPage').then(m => ({ default: m.HelpPage })))
@@ -58,6 +59,7 @@ export default function App() {
             <Route path="/dashboard" element={<DashboardRouter />} />
             <Route path="/clients/new" element={<AddClientPage />} />
             <Route path="/clients/:clientId" element={<ClientDetailPage />} />
+            <Route path="/clients/:clientId/tearsheet" element={<ClientTearsheetPage />} />
             <Route path="/clients/:clientId/edit" element={<EditClientPage />} />
             <Route path="/clients" element={<ClientsPage />} />
             <Route path="/settings" element={<SettingsPage />} />
