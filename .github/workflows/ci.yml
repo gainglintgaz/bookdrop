@@ -110,3 +110,43 @@ jobs:
           else
             echo "NO HITS (no edge functions)"
           fi
+
+  doc-hygiene:
+    name: Doc hygiene (markdown size + duplication audit)
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    continue-on-error: true  # advisory until baselined
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Per-file line-count audit (mirrors scripts/audit-docs.ps1)
+        run: |
+          # Bash twin of scripts/audit-docs.ps1 — PowerShell runs locally,
+          # this runs in CI. Both enforce .claude/rules/doc-hygiene.md caps.
+          set -e
+          fail=0; warn=0
+          while IFS= read -r f; do
+            # Skip auto-generated mirrors (fix the source rules instead)
+            case "$f" in
+              ./AGENTS.md|./GEMINI.md|./.windsurfrules|./PERPLEXITY_SPACE_INSTRUCTIONS.md|./.cursor/*) continue ;;
+            esac
+            lines=$(wc -l < "$f")
+            # Determine cap by path
+            case "$f" in
+              ./.claude/rules/*) soft=200; hard=280 ;;
+              ./CURRENT_SPRINT.md) soft=80; hard=150 ;;
+              ./V1_FEATURE_BACKLOG.md) soft=120; hard=200 ;;
+              ./scripts/*) soft=200; hard=300 ;;
+              *) soft=150; hard=250 ;;
+            esac
+            if [ "$lines" -gt "$hard" ]; then
+              echo "::warning file=$f::HARD-cap violation: $lines lines (cap $hard) — see .claude/rules/doc-hygiene.md"
+              fail=$((fail+1))
+            elif [ "$lines" -gt "$soft" ]; then
+              echo "::notice file=$f::SOFT-cap warning: $lines lines (soft cap $soft)"
+              warn=$((warn+1))
+            fi
+          done < <(find . -name '*.md' -not -path './node_modules/*' -not -path './dist/*' -not -path './.git/*')
+          echo ""
+          echo "Summary: $fail HARD violations, $warn SOFT warnings"
+          # Exit 0 (continue-on-error true at job level keeps PR mergeable)
