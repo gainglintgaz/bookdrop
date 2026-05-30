@@ -21,7 +21,23 @@
     <meta name="twitter:description" content="Stop chasing clients for documents. Auto-reminders, statement parsing, bookkeeper-ready packages." />
 
     <!-- Theme -->
-    <meta name="theme-color" content="#2d6a4f" />
+    <meta name="theme-color" content="#2d6a4f" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#1a3d2d" media="(prefers-color-scheme: dark)" />
+
+    <!-- iOS home-screen install support -->
+    <link rel="apple-touch-icon" href="/favicon.svg" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="BookDrop" />
+
+    <!-- Windows tile -->
+    <meta name="msapplication-TileColor" content="#2d6a4f" />
+
+    <!-- Performance: preconnect to runtime hosts -->
+    <link rel="preconnect" href="https://mvvadmlivrpyawmlaqye.supabase.co" crossorigin />
+
+    <!-- Canonical -->
+    <link rel="canonical" href="https://bookdrop.io" />
   </head>
   <body>
     <div id="root"></div>
