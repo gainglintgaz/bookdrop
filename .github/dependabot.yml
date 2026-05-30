@@ -1,0 +1,82 @@
+# .github/dependabot.yml
+# Weekly auto-PRs for npm + GitHub Actions updates.
+#
+# While the user is away, security patches still need to land. Dependabot
+# opens a PR per ecosystem per week — green CI = safe to one-tap merge
+# from GitHub Mobile.
+#
+# Grouped to reduce PR noise: types / dev / build tools / tailwind / lucide
+# all get bundled.
+
+version: 2
+
+updates:
+  - package-ecosystem: npm
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "14:00"
+      timezone: "Etc/UTC"
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+      - dependabot
+    commit-message:
+      prefix: deps
+      include: scope
+    groups:
+      types:
+        patterns:
+          - "@types/*"
+      eslint:
+        patterns:
+          - "eslint*"
+          - "typescript-eslint"
+          - "@eslint/*"
+      tailwind:
+        patterns:
+          - "tailwindcss"
+          - "@tailwindcss/*"
+          - "autoprefixer"
+      build-tools:
+        patterns:
+          - "vite"
+          - "@vitejs/*"
+          - "vitest"
+          - "tsx"
+      testing-library:
+        patterns:
+          - "@testing-library/*"
+      stripe:
+        patterns:
+          - "stripe"
+          - "@stripe/*"
+      supabase:
+        patterns:
+          - "@supabase/*"
+    ignore:
+      # React major upgrades are breaking — gate behind explicit review.
+      - dependency-name: "react"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "react-dom"
+        update-types: ["version-update:semver-major"]
+      # TypeScript major upgrades same — too disruptive on minor breaks.
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "14:00"
+      timezone: "Etc/UTC"
+    open-pull-requests-limit: 3
+    labels:
+      - dependencies
+      - dependabot
+      - github-actions
+    commit-message:
+      prefix: ci
+      include: scope
