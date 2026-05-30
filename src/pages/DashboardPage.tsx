@@ -18,6 +18,7 @@ import {
   Calendar, Package, BarChart3,
 } from 'lucide-react'
 import type { SubmissionStatus, ClientWithStatus } from '@/types'
+import { urgencyScore, sortByUrgency } from '@/lib/urgency-score'
 
 const PORTAL_BASE = `${window.location.origin}/upload/`
 
@@ -351,7 +352,7 @@ export function DashboardPage() {
               <table className="min-w-[560px] w-full text-left text-sm">
                 <thead>
                   <tr className="border-b border-gray-100 bg-gray-50/50">
-                    <th className="px-4 py-3 font-medium text-gray-500 text-xs uppercase tracking-wide">Client</th>
+                    <th className="px-4 py-3 font-medium text-gray-500 text-xs uppercase tracking-wide">Client <span className="ml-1 normal-case tracking-normal text-[10px] text-gray-400">· sorted by urgency</span></th>
                     <th className="px-4 py-3 font-medium text-gray-500 text-xs uppercase tracking-wide">Status</th>
                     <th className="hidden px-4 py-3 font-medium text-gray-500 text-xs uppercase tracking-wide sm:table-cell">Progress</th>
                     <th className="hidden px-4 py-3 font-medium text-gray-500 text-xs uppercase tracking-wide sm:table-cell">Last Upload</th>
@@ -359,7 +360,7 @@ export function DashboardPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-50">
-                  {clients.map(client => (
+                  {sortByUrgency(clients).map(client => (
                     <ClientRow key={client.id} client={client} />
                   ))}
                 </tbody>
@@ -511,6 +512,25 @@ function ActionClientRow({ client }: { client: ClientWithStatus }) {
 
 // ---- Client Table Row ----
 
+/** Small colored dot signalling AI-derived urgency. Hover shows the reason. */
+function UrgencyDot({ client }: { client: ClientWithStatus }) {
+  const u = urgencyScore(client)
+  if (u.level === 'none') {
+    return <span className="inline-block h-2 w-2 shrink-0 rounded-full bg-gray-200" title="No action needed — all documents received." aria-hidden="true" />
+  }
+  const color =
+    u.level === 'high' ? 'bg-red-500' :
+    u.level === 'medium' ? 'bg-amber-500' :
+    'bg-gray-300'
+  return (
+    <span
+      className={cn('inline-block h-2 w-2 shrink-0 rounded-full', color)}
+      title={`Urgency ${u.score}/100 — ${u.reason}`}
+      aria-label={`Urgency ${u.score} of 100: ${u.reason}`}
+    />
+  )
+}
+
 function ClientRow({ client }: { client: ClientWithStatus }) {
   const navigate = useNavigate()
   const [sending, setSending] = useState(false)
@@ -550,6 +570,7 @@ function ClientRow({ client }: { client: ClientWithStatus }) {
     >
       <td className="px-4 py-3.5">
         <div className="flex items-center gap-2">
+          <UrgencyDot client={client} />
           <span className="font-medium text-gray-900 group-hover:text-primary transition-colors">
             {client.business_name}
           </span>
