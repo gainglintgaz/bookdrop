@@ -1,8 +1,5 @@
 # Execution Protocol + Rollback + Self-Improvement
 
-## The Communication Rule (non-negotiable)
-Victor is a business strategist, not a programmer. Every design decision, architecture review, and technical recommendation MUST include a plain-language explanation of what the user experiences. "Node SEA" means nothing to a non-developer. "The user downloads one file and it just works" is what matters. Technical accuracy is required AND human clarity is required. Both, not either/or. This applies to client communications too — clients don't know what a sidecar is, but they understand "the app handles everything behind the scenes."
-
 ## The Build Workflow
 When initialized with a project brief, execute in this strict sequence:
 
@@ -25,10 +22,6 @@ Before writing any code, before the blueprint, ask these questions if the answer
 
 **For any feature requiring new DB tables, writes, or auth-protected routes — also ask:**
 11. What auth is required at every layer? List every route, RPC call, and Edge Function that will be created, and state the required auth level for each. What RLS policy covers each table? Define schema first: primary key, foreign keys with ON DELETE behavior, and indexes on every WHERE/ORDER BY column — before writing any INSERT or SELECT.
-
-**For any project that will have real users or handle sensitive data — also ask:**
-12. What legal/compliance requirements exist? (financial disclaimers, data privacy laws, terms of service, explicit consent, age requirements, CCPA, GDPR)
-13. Does every Edge Function/API route that writes or deletes data have authentication? List each one and its auth requirement.
 
 **The rule:** If Victor hasn't answered these, ASK before building. Do not assume. Do not default.
 A 30-minute conversation here prevents 8 hours of testing and rework.
@@ -77,42 +70,6 @@ Not just "does it render?" — ALL of these:
 - [ ] No console errors
 - [ ] No fake data visible (honest strings check)
 - [ ] Error boundary catches failures gracefully
-
-### Phase 5.5: Audit Gate Output (MANDATORY for "done" claims)
-
-**This phase exists because Phase 5 was repeatedly skipped under shipping pressure.** Discipline alone is not enough — we need mechanical enforcement.
-
-Any commit message that contains the words **"complete", "done", "finished", "ship", or "deploy"** for a phase/feature/sprint MUST include an `AUDIT GATE` block in the commit message body. The block lists the five Rule 35 gates and their pass/fail status.
-
-**Required format:**
-
-```
-AUDIT GATE [<phase or feature name>]
-✓ tsc --noEmit       — 0 errors
-✓ npm run lint       — 0 errors
-✓ browser click-through — primary flows render, 0 console errors
-✓ DB SELECT round-trip — wrote row X, queried, matches
-✓ column drift grep    — 0 mismatches vs information_schema
-```
-
-If any gate fails, the commit must NOT use "done|complete|finished|ship|deploy" wording. Instead use "wip", "partial", "fix in progress", etc.
-
-**Mechanical enforcement (project-level):**
-- Pre-commit hook in `.husky/pre-commit` greps the commit message; rejects if "done|complete|finished" present without `AUDIT GATE` block.
-- `npm run verify:phase-X` script exits non-zero unless all five gates pass; outputs the AUDIT GATE block on success for paste into commit body.
-- Per-phase checklist file in `.claude/checklists/phase-X-complete.md` requires 100% checked-off state; pre-commit verifies.
-
-**What this prevents (real failure mode, ForgeMinds Phase 0 audit, April 2026):**
-- Schema migrated successfully (70 tables, RLS, grants).
-- Auto-scaffolded code referenced wrong column names from earlier mock schema.
-- Build compiled. TypeScript was happy. I declared "Phase 0 complete" three times.
-- Every API route would have crashed at runtime on first user click.
-- Audit (only run because user pushed back) revealed 6 broken routes, 9 incomplete files, 16+ unbuilt features.
-
-The cost of the gate: ~2 sessions to install + ~30 sec per commit forever.
-The cost without: days of debugging + lost user trust.
-
-See lessons.md #93-95 for the full failure mode + recovery pattern.
 
 ### Phase 6: Learning Loop
 The post-session-enforcer.ps1 fires automatically via Claude Code Stop hook.
@@ -191,34 +148,14 @@ location.reload()
 
 ---
 
-## Self-Improvement Protocol (Automatic — powered by self-reflection.md)
+## Self-Improvement Protocol (Automatic)
 
-### After Every Session (MANDATORY — not optional, not "if you have time")
-Claude MUST run the full Self-Audit Checklist from `self-reflection.md`:
-1. Did I follow a rule that produced a bad outcome?
-2. Did I skip a rule that would have caught a problem?
-3. Did I ask a question but not enforce the answer?
-4. Did another Claude session miss something my rules should have caught?
-5. Did I build something a future session will struggle to understand?
-6. Did I use a pattern that works well and isn't in golden-paths.md?
-7. Did any rule feel outdated or contradicted by what I just built?
-
-If ANY answer is "yes" → draft a rule update and present it to Victor for approval.
-If ALL answers are "no" → state that explicitly so Victor knows the audit ran.
-
-**Victor should never have to ask "did you learn anything?"** The system presents its own findings.
-
-### After Every Architecture Review or Feature Build
-Run the Rule Gap Scanner from `self-reflection.md`:
-- Enforcement Check: Did every Hostile Architect question produce a schema/code change?
-- Coverage Check: Does the Definition of Done cover what was built?
-- Cross-Rule Consistency: Did any rules contradict each other?
-- Lesson Extraction: Did anything match an existing lesson that failed to prevent it?
-- Completeness Check: dedup, audit trail, empty state, second-time scenario for every table/endpoint
-
-### Cross-Session Intelligence (when Victor relays from another session)
-Automatically ask: "Do my current rules cover what the other session missed?"
-If not → draft the rule upgrade immediately. Don't wait for Victor to ask.
+### After Every Session
+Claude should automatically check:
+1. **New patterns discovered?** -> Suggest additions to lessons.md
+2. **Bugs encountered?** -> Add to project's errors-fixed.json with root cause + golden rule
+3. **New golden paths?** -> Suggest additions to project's golden-paths.md
+4. **Rules violated?** -> Flag which VIBE rules were broken and why
 
 ### Post-Mortem Protocol (5-Minute Friday Rule)
 At end of every sprint or client handoff:
@@ -226,7 +163,6 @@ At end of every sprint or client handoff:
 2. Draft 1 new VIBE rule if a bug pattern recurred
 3. Distill 3 bullet lessons for lessons.md
 4. **Rule of thumb:** Bug once = fix it. Bug twice = becomes a VIBE Rule.
-5. Run Rule Health Check: any rules not updated in 30+ days? Any overlapping lessons?
 
 ### Context Drift Prevention
 - CURRENT_SPRINT.md and V1_FEATURE_BACKLOG.md are mandatory persistent files for every project
@@ -239,3 +175,48 @@ At end of every sprint or client handoff:
 - Features go into backlog IMMEDIATELY when mentioned (status: DISCUSSED)
 - Verbal discussion alone loses features — persistent files are the only cure
 - Status flow: DISCUSSED -> IN PROGRESS -> DONE -> VERIFIED
+
+---
+
+## Appendix A — Build Discipline (promoted 2026-05-13, PENDING_APPROVALS #19, EaseAway harvest)
+
+Patterns derived from data-pipeline / external-API project work. Applies to any project with scheduled jobs, Python scripts, or third-party API integration.
+
+### A.1 — Design-only sessions are design-only
+
+When the planned session is "design cleanup" / "UI polish" / "refactor pass" — no feature additions. Mixing design + feature work means neither gets a clean review. If a feature is critical mid-session, end the design session cleanly first (commit + checkpoint) before starting the feature work as a separate task.
+
+### A.2 — Python script discipline
+
+For factory + project Python scripts:
+- **Never `sys.argv` magic** — use `argparse` or `click` with explicit named args. Surprises kill scripts in cron.
+- **Always test with fixtures** before invoking live APIs. A 50-line script that runs against a recorded fixture in 200ms is the right development loop; a script that runs against live API for every edit burns budget + rate limits.
+- **Idempotent re-run** — every script should be safe to invoke twice. Use idempotency keys / UPSERT / dedup hashes.
+- **Cents-spent log** — every external-API-calling script writes spend to a usage log (per-tenant if SaaS).
+
+### A.3 — X API cost guard (and analogue for other paid APIs)
+
+- **Always keyword-filter BEFORE streaming.** Never `xClient.filteredStream.start()` without `rules` configured.
+- **Cap `max_results`** on every search call (≤ 100 default).
+- **Wrapper enforces** ≥1 domain-keyword + ≥1 sentiment-keyword (for sentiment use cases) or equivalent gating per use case.
+- **Refuse-to-call** if month-to-date spend exceeds `x_api_budget_cents` for the tenant / user.
+
+### A.4 — Edge Function / cron deployment verification (lessons.md #88, bookkeeping Bug 13)
+
+Static check is necessary but NOT sufficient. After every deploy:
+1. `supabase functions list` confirms every function in `supabase/functions/*` appears in the list
+2. `curl -X POST <function-url> -H "Authorization: Bearer $SERVICE_ROLE_KEY"` returns 200
+3. After scheduling cron: wait 24h, check logs for ≥1 successful run
+
+Without #1+#2+#3 a "shipped" Edge Function can silently no-op for weeks. Treat undeployed function as a CRITICAL bug, not a deferred TODO.
+
+### A.5 — Five-gate Definition of Done (VIBE Rule 35 reminder)
+
+For every feature, in order, each blocks the next:
+1. `npx tsc --noEmit` passes (catches what Vite/Turbopack skip)
+2. `npm run lint` passes
+3. Browser click-through with DevTools open — primary flows render zero console errors
+4. DB SELECT round-trip — for data-write features, verify row exists with correct columns
+5. Column-drift grep — `.from("table").select("col")` strings audited against live `information_schema.columns`
+
+Cannot mark a feature, phase, or sprint "done" with even one gate missing.

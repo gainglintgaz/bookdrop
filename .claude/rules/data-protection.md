@@ -124,7 +124,25 @@ Before any `apply_migration` call to MCP, AI must:
    ```
 3. Wait for explicit user confirmation. **Never proceed silently.**
 
-### §4.3 Audit log
+### §4.3 Post-migration advisor scan (mandatory)
+
+**Rule (added 2026-05-13, PENDING_APPROVALS #15, BookDrop harvest):** After every `apply_migration` call via the Supabase MCP, run `get_advisors` BEFORE the next task. Surface any new security advisories, missing RLS, or index gaps the migration introduced. Log the advisor output in the migration commit body.
+
+- Cost: $0 — `get_advisors` is a free MCP call
+- Catches: tables created without RLS, missing indexes on FK columns, function search_path issues, broken policy definitions
+- Failure mode this prevents: a migration that adds a table without RLS isn't caught until a manual audit 3 sessions later (BookDrop incident — confirmed class-of-bug recurrence)
+
+```
+Step 1: apply_migration succeeds
+Step 2: get_advisors immediately
+Step 3: If any new advisory: surface + fix BEFORE moving on (don't queue)
+Step 4: Commit body: "Applied migration X. Advisors clean ✓"
+        — or list the new findings explicitly
+```
+
+**Tripwire:** any commit modifying `supabase/migrations/*.sql` whose message does NOT contain `Advisors:` (clean or finding-list) is incomplete. Pre-commit hook can enforce: `grep -E "Advisors: (clean|" $COMMIT_MSG_FILE`.
+
+### §4.4 Audit log
 
 Every DDL/DML invoked from MCP logs to `admin_audit_log`:
 

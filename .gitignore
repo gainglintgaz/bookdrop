@@ -5,3 +5,9 @@ dist
 *.log
 
 .vercel
+
+# Local factory working artifacts (machine-specific, not project source)
+.claude/launch.json
+.claude/v4.3-harvest.md
+INTEL_FEED.md
+POWERSHELL_BOOKDROP_OVERNIGHT.txt

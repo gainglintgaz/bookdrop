@@ -1,3 +1,5 @@
+<!-- VictorForge factory v4.3 -- onboarded 2026-05-14 -->
+
 # bookkeeper-portal
 
 ## Quick Start

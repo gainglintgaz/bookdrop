@@ -17,6 +17,77 @@ Whenever Victor relays findings, questions, or designs from another Claude sessi
 
 ---
 
+## v4.3.5 -- Passive Listening Layer (added 2026-05-13)
+
+**Replaces manual end-of-session "anything frustrate you?" prompts entirely.**
+
+The UserPromptSubmit hook now runs `signal-classifier-tier1.ps1` on EVERY user prompt,
+capturing real-time signals as Victor speaks -- zero recall bias, zero user effort.
+
+### Signal capture flow
+
+```
+User types prompt
+       |
+       v
+UserPromptSubmit hook (non-blocking, always exits 0)
+       |
+       v
+signal-classifier-tier1.ps1 -- Tier-1 regex/keyword classifier (1-5ms, $0)
+  - Matches against 12 signal types in .claude/signal-taxonomy.json
+  - 0 matches: logs metadata-only entry (no signal type)
+  - 1+ matches: appends to <project>/.claude/signal-log.jsonl
+  - CRITICAL (REPEAT, SECURITY, RULE_VIOLATION): emits real-time note
+  - PII scrubber + secret detector run on excerpt before any storage
+       |
+       v
+Session end: Stop hook fires signal-batch-analyzer.ps1
+  - Reads signal-log.jsonl entries from this session
+  - Aggregates signal counts + identifies patterns
+  - Proposes PENDING_APPROVALS entries for actionable patterns
+       |
+       v
+Weekly (Sunday 8am): Synthesizer agent runs
+  - Cross-references signals from all 6 known project paths (past 7 days)
+  - Detects: REPEAT cross-project, REWORK density, SECURITY, FRUSTRATION>5
+  - Appends findings to WEEKLY_INSIGHTS.md + PENDING_APPROVALS.md
+```
+
+### Signal log location
+`<project_path>\.claude\signal-log.jsonl` -- append-only JSONL, 90-day TTL
+
+### The 12 signal types (full taxonomy: `.claude/signal-taxonomy.json`)
+
+| Signal | Example triggers | Priority |
+|---|---|---|
+| REPEAT | "again?", "I already told you", "you keep doing" | CRITICAL |
+| SECURITY | "breach", "exposed", "leaked", credential words | CRITICAL |
+| RULE_VIOLATION | Named VIBE rule citations | CRITICAL |
+| REWORK | "redesign", "rewrite", "rebuild", "start over" | HIGH |
+| CORRECTION | "no", "wrong", "that's not right", "incorrect" | HIGH |
+| BUG | "doesn't work", "broken", error codes, TypeErrors | HIGH |
+| MISSING | "you missed", "you forgot", "where's the" | MEDIUM |
+| FRUSTRATION | "ugh", "why", caps lock, excessive punctuation | MEDIUM |
+| CLARIFY_NEEDED | Re-explaining same concept across 3+ turns | MEDIUM |
+| CONFUSION | "I don't understand", "huh?", "explain this" | MEDIUM |
+| APPROVAL | "great", "perfect", "exactly", "nailed it" | POSITIVE |
+| PIVOT_STRATEGIC | "let's pivot", "different direction", "kill this" | PROJECT |
+
+### DEPRECATED: end-of-session frustration prompts
+
+Do NOT ask: "Did anything frustrate you this session?"
+Do NOT prompt: "Any pain points I should know about?"
+
+These produced recall-biased, compressed signals captured after the moment of pain had passed.
+The UserPromptSubmit hook captures the real signal at the exact moment it occurs.
+Victor's job: review PENDING_APPROVALS.md weekly and approve or reject proposals.
+
+### Related skills
+- `/half-baked-scan [project_path]` -- stuck-project detector using signal density + sprint status
+- `/preempt-project [project_path] [vertical]` -- pre-inject lessons at scaffold time using cross-project signal history
+
+---
+
 ## Self-Audit Checklist (runs every session)
 
 After completing the main work but before session end, ask yourself these 7 questions. Write honest answers. If any answer is "yes," draft a rule update and present it to Victor.
@@ -131,20 +202,39 @@ If the answer to that last question is "yes, a fresh Claude would still miss thi
 
 ## Integration Points
 
-### Post-Session Hook
-The `post-session-enforcer.ps1` fires SESSION_DEBRIEF.md.
-Claude should read SESSION_DEBRIEF.md AND run Self-Audit before presenting final output.
+### UserPromptSubmit Hook (real-time -- automatic, every prompt)
+`scripts/signal-classifier-tier1.ps1` fires on every user prompt via the `UserPromptSubmit`
+hook in `.claude/settings.json`. Non-blocking (always exits 0). Appends classified signals to:
+`<current_project>\.claude\signal-log.jsonl`
 
-### Weekly Deep Sweep
-The Sunday 8am sweep should include a "Rule Health Check":
+### Stop Hook -- signal batch analyzer (session-end -- automatic)
+`scripts/signal-batch-analyzer.ps1` fires at session end alongside `post-session-enforcer.ps1`.
+Reads signal-log.jsonl entries from the current session, detects session-level patterns,
+and proposes actionable items to PENDING_APPROVALS.md.
+
+### Post-Session Hook -- session debrief (session-end -- automatic)
+`post-session-enforcer.ps1` generates SESSION_DEBRIEF.md.
+Claude reads SESSION_DEBRIEF.md AND checks if any CRITICAL signals (REPEAT, SECURITY,
+RULE_VIOLATION) were logged this session before presenting the final self-reflection output.
+If CRITICAL signals fired: surface them explicitly in the Self-Reflection Report.
+
+### Synthesizer Agent (weekly -- Sunday 8am scheduled)
+`.claude/agents/synthesizer.md` reads signal-log.jsonl from all 6 known project paths
+(past 7 days), detects cross-project patterns (REPEAT in 2+ projects, REWORK density >=3,
+SECURITY anywhere, FRUSTRATION >5, APPROVAL in 3+ projects), and appends proposals to
+WEEKLY_INSIGHTS.md and PENDING_APPROVALS.md.
+
+### Weekly Deep Sweep (Sunday 8am -- scheduled)
+The Sunday sweep should include a "Rule Health Check":
 - Count how many lessons were added in the last 7 days
 - Check if any new lessons overlap with or contradict existing ones
 - Flag any rule file not updated in 30+ days (may be stale)
 - Check if ForgeDesk's rules_text table is in sync with .claude/rules/
+- Check signal-log.jsonl: any project with >10 FRUSTRATION signals in the past 7 days?
 
 ### Daily Status
 The 8am daily report should include one line:
-"Self-Reflection: [N] gaps found last session, [N] rule updates pending Victor's approval"
+"Self-Reflection: [N] signals captured last session (REPEAT:[n] REWORK:[n] APPROVAL:[n]), [N] rule updates pending approval"
 
 ---
 

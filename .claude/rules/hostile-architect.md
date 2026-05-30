@@ -8,6 +8,8 @@ A devil's advocate pass that tries to break every plan before code is written. N
 - Before every client proposal delivery
 - When Victor says "Hostile Architect [feature]"
 
+**Tooling note (2026-05-13):** the `mcp-advisor` agent in `.claude/agents/mcp-advisor.md` runs Phase 0 (Tool Audit) plus the VIBE Rule #24 marketplace search automatically — invoke it before doing the cost table manually. See also the `check-marketplace` skill.
+
 ## The 8 Phases
 
 ### Phase 0: Tool Audit & Monthly Cost Estimate
@@ -58,20 +60,21 @@ What happens at the edges?
 - **No network:** Degrade gracefully or white-screen?
 - **Stale cache:** localStorage from previous schema version?
 - **Concurrent writes:** Two tabs save simultaneously?
-- **Port/resource collision:** Is the default port/file/resource already taken? What's the fallback?
-- **Process crash:** If a background service dies mid-operation, does the app recover or break silently?
 
-### Phase 1.5: Second-Time Attack (added April 2026 — from FinKeel Local review)
-What happens the second time a user does something?
-- **Double import:** User imports the same CSV twice — are there duplicates? Is there a hash/fingerprint dedup mechanism?
-- **Double scan:** User scans the same receipt twice — does it create a duplicate transaction?
-- **Double click:** User clicks submit twice fast — does it create two records? Is there a loading state that blocks re-submission?
-- **Re-export:** User exports tax data, then asks "did I already export this?" — is there an export history to answer?
-- **Re-visit:** User returns to a feature 6 months later — does the audit trail tell you which version of a prompt/algorithm generated old results?
+### Phase 1.6: AI Purchase Research / Recommendation Attack (added 2026-05-13 — HuntHive harvest)
 
-For every user action that creates data, answer: **what prevents this from happening twice?** If the answer is "nothing," add a UNIQUE constraint, hash, or idempotency check before building.
+When the product makes AI-driven recommendations (purchase research, deal scoring, content curation, source picking), these 8 failure modes are mandatory checks:
 
-**Enforcement rule:** Every "yes, this could happen twice" answer MUST produce a specific schema change (hash column, UNIQUE constraint, export_history table, idempotency key) documented in the blueprint BEFORE Phase 3 begins. Questions without schema enforcement are suggestions — suggestions get skipped. Schema requirements get built.
+1. **Hallucinated URLs** — AI generates product/source URLs that LOOK valid but 404 on resolve. Mitigation: URL validator subagent that HEADs every URL before it leaves the function; reject the recommendation if validation fails.
+2. **Retailer 403 = false invalid** — bot-protected retailers return 403 to HEAD requests; the validator marks the product invalid when it's actually fine. Mitigation: treat 403 separately from 404 — retry once with browser UA, then accept with a "verification pending" badge rather than discarding.
+3. **Citation/body mismatch** — Perplexity returns a citation array AND a response body. Fabricated URLs in the body don't always appear in citations. Mitigation: cross-check every URL in the body against the citations array; drop body-only URLs as unverified.
+4. **Double-rating inflation** — user submits same product rating twice (race condition or refresh-submit). Aggregate inflated. Mitigation: `UNIQUE (user_id, product_id, rating_type)` constraint + 23505-skip on retry (VIBE Rule 37).
+5. **Schema drift in structured output** — model provider changes default response schema (added field, removed field, renamed key). Parser silently drops picks. Mitigation: response-schema fingerprint stored per `prompt_version`; alert when fingerprint changes mid-week (lessons.md #73).
+6. **Stale blocklist** — category/brand blocklist not updated; competitor brand appears as recommendation. Mitigation: blocklist lives in `recommendation_blocklist` table with a `last_reviewed_at` column; weekly cron alerts when any entry is >90d old.
+7. **Uncapped scrape budget** — Firecrawl / headless browser called per-product without a per-report cap; single report triggers 50+ calls. Mitigation: per-report budget + 80%/100% guard (GP-017 SaaS Dispatcher Cost-Audit pattern, adapted per-report).
+8. **Deal score with <3 price points** — `BEST DEAL!` rendered for a product with only 2 historical prices. Sample size too small for "deal." Mitigation: render gate requires ≥N price points (define N per category) AND a stated `data_confidence` level; below threshold show "tracking — not enough history."
+
+**Applies to:** HuntHive, FinKeel `dealRadar`, ForgeMinds `source-suggester` (any AI surface that proposes user-visible products / sources / actions). Failure of any check = CRITICAL hold before ship.
 
 ### Phase 2: Persistence Audit
 Does data ACTUALLY reach the database?

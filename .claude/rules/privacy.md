@@ -1,5 +1,10 @@
 # Privacy Rules + Security Patterns
 
+> **Companion rules (2026-05-13):**
+> - `data-protection.md` — production data architecture, token-scope tiers, destructive-op gates
+> - `secrets-handling.md` — Read-tool prohibition on .env files, transcript hygiene, token rotation (closes SEC-03)
+> - `aggregate-design.md` — cohort design, anonymized aggregate rules
+
 ## AI API Boundaries — MANDATORY for All Projects
 
 ### NEVER Send to Any AI API
