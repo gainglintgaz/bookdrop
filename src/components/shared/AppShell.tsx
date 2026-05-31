@@ -1,5 +1,6 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, Suspense } from 'react'
 import { Outlet, Link, useLocation } from 'react-router-dom'
+import { PageSkeleton } from '@/components/shared/PageSkeleton'
 import { useAuthStore } from '@/stores/auth.store'
 import { useAccountType } from '@/hooks/useAccountType'
 import { isDemoMode } from '@/lib/mode'
@@ -160,7 +161,11 @@ export function AppShell() {
             </Link>
           </div>
         )}
-        <Outlet />
+        {/* Per-page Suspense: keeps the shell painted, swaps content for a
+            skeleton while a lazy page chunk loads (Dashboard/Clients/ClientDetail/etc.) */}
+        <Suspense fallback={<PageSkeleton />}>
+          <Outlet />
+        </Suspense>
       </main>
     </div>
   )
