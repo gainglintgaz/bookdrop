@@ -69,3 +69,10 @@ Append-only. Newest entries at bottom.
 - Registry status live; Analysis wires WorkflowLibraryPanel + real run (no getDemoWorkflowResult for primary path)
 - `exceptions-queue.ts` + `ExceptionsQueue` on Documents tab → recordCorrection + category-memory
 - 111 tests
+
+### Phase 0–2 approval (Victor)
+- Locked: magic-link confirm, real line table, playbooks after 2, accounts later separate
+- Design: `BOOKDROP_PHASE_0_2_DESIGN.md` (audit + FinKeel source_kind borrow)
+- Phase 0: stub workflows not runnable
+- Phase 1: migration 009, document-lines insert on upload, exceptions prefer lines
+- Phase 2 portal confirm: design complete, UI not shipped yet

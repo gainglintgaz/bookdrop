@@ -153,16 +153,13 @@ function WorkflowCard({ workflow, onRun }: CardProps) {
               </button>
             )}
             {w.status === 'stub' && (
-              <button
-                type="button"
-                onClick={() => onRun?.(w)}
-                disabled={!onRun}
-                className="inline-flex items-center gap-1.5 rounded-md border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-medium text-amber-700 hover:bg-amber-100 disabled:opacity-50"
-                title="Preview executor runs a stub for now"
+              <span
+                className="inline-flex items-center gap-1.5 rounded-md border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-medium text-amber-800"
+                title="Preview only — no executor runs. Nothing is simulated as success."
               >
                 <Hammer className="h-3 w-3" />
-                Run preview
-              </button>
+                Preview only (not runnable)
+              </span>
             )}
             {w.status === 'planned' && (
               <span className="inline-flex items-center gap-1.5 rounded-md border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-500">

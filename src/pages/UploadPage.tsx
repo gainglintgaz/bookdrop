@@ -16,6 +16,7 @@ import { ErrorState } from '@/components/shared/ErrorState'
 import { generateUploadDeadlineICS, getNextDeadline } from '@/lib/calendar'
 import { formatFileSize } from '@/lib/utils'
 import { autoCategorizeUpload } from '@/lib/auto-categorize-upload'
+import { insertDocumentLineItems } from '@/lib/document-lines'
 import { CheckCircle, Clock, FileText, Calendar, Upload, History, AlertCircle, FileSignature } from 'lucide-react'
 
 export function UploadPage() {
@@ -99,8 +100,7 @@ export function UploadPage() {
             parsed_summary: result.parsedSummary,
             categorization_summary: result.categorizationSummary,
           }
-          // Persist summaries so bookkeeper Documents tab can show exceptions
-          // without reopening the Analysis tab.
+          // Persist summaries + line items (Phase 1 audit spine).
           try {
             await updateUploadAiEnrichment(upload.id, {
               auto_categorized_at,
@@ -108,8 +108,16 @@ export function UploadPage() {
               parsed_summary: result.parsedSummary,
               categorization_summary: result.categorizationSummary,
             })
+            if (result.lines.length > 0) {
+              await insertDocumentLineItems({
+                uploadId: upload.id,
+                clientId: portalData.client.id,
+                bookkeeperId: portalData.bookkeeperId,
+                lines: result.lines,
+              })
+            }
           } catch (persistErr) {
-            console.warn('[UploadPage] AI enrichment not persisted — UI still shows receipt:', persistErr)
+            console.warn('[UploadPage] AI enrichment/lines not persisted — UI still shows receipt:', persistErr)
           }
         }
       } catch (err) {

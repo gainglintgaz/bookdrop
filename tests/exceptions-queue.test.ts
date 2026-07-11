@@ -61,5 +61,6 @@ describe('buildExceptionItems', () => {
     expect(items[0].uploadId).toBe('u1')
     expect(items[0].originalCategory).toBe('Uncategorized')
     expect(items[0].description).toMatch(/Chase/)
+    expect(items[0].hasLineEvidence).toBe(false)
   })
 })
