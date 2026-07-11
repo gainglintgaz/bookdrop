@@ -15,6 +15,7 @@ Thin portal + close-PREP; FinKeel remains flagship. Not competing with TaxDome /
 | **P3** | Month package auto-draft | ✅ | `evaluatePackageDraft` auto when completeness passes; banner + Export tab "Package ready for review"; HTML package + ZIP |
 | **P4** | FinKeel merge contract | ✅ | `INTEGRATION_FINKEEL.md` |
 | **P5** | Stretch workflow executor | ❌ | Deferred |
+| **D.5** | Dashboard urgency sort | ✅ | `urgency.ts` + Dashboard “Needs your attention first” + table column |
 
 ## Mode
 - Local `.env`: Supabase URL/anon present; **`VITE_MODE` unset → defaults to `demo`** (`src/lib/mode.ts`)

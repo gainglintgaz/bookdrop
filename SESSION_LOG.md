@@ -57,3 +57,9 @@ Append-only. Newest entries at bottom.
 - ClientDetail banner + Export tab wiring
 - tests: package-draft + finance-prep-package (100 tests total)
 - Commit 1 (G0-G2+G4): d9458b3
+
+### D.5 urgency + Victor launch page
+- Chose **urgency** over G5/corrections (highest daily open value, pure local math)
+- `src/lib/urgency.ts` + Dashboard sort/badges
+- `VICTOR_LAUNCH_ORDER.md` — Vercel + R2 clicks only
+- 104 tests
