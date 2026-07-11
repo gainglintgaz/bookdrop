@@ -12,7 +12,7 @@ Thin portal + close-PREP; FinKeel remains flagship. Not competing with TaxDome /
 | **P0** | Ground truth | ✅ | `npm run build` green; `npx vitest run` 94/94 |
 | **P1** | Cloud launch readiness | ✅ | `FOUNDER_ENV_CHECKLIST.md`; honest LandingPage; smoke checklist below |
 | **P2** | AI on default path | ✅ | Persist AI enrichment; Documents exceptions strip; demo data shows exceptions; client portal receipt already existed |
-| **P3** | Month package auto-draft | 🟡 | Completeness + package export exist via Analysis/Export tabs; not fully auto on completeness |
+| **P3** | Month package auto-draft | ✅ | `evaluatePackageDraft` auto when completeness passes; banner + Export tab "Package ready for review"; HTML package + ZIP |
 | **P4** | FinKeel merge contract | ✅ | `INTEGRATION_FINKEEL.md` |
 | **P5** | Stretch workflow executor | ❌ | Deferred |
 

@@ -47,8 +47,13 @@ Append-only. Newest entries at bottom.
 - build exit 0
 - vitest 94/94 (skipped auto-categorize unit test — pdfjs needs DOMMatrix in Node)
 
-### Not done
-- P3 package auto-draft on completeness pass
+### Not done (after G3)
 - P5 workflow executor
 - Live cloud smoke (founder secrets)
-- Git commit (optional — founder can commit from worktree)
+
+### G3 — Package auto-draft (2026-07-11 cont.)
+- `src/lib/package-draft.ts` — evaluatePackageDraft
+- `finance-prep.ts` — buildBookkeeperPackageHtml + "Package ready for review" badge
+- ClientDetail banner + Export tab wiring
+- tests: package-draft + finance-prep-package (100 tests total)
+- Commit 1 (G0-G2+G4): d9458b3

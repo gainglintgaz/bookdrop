@@ -18,6 +18,7 @@ import { tenantConfig } from '@/lib/tenant.config'
 import { generateUploadDeadlineICS, getNextDeadline } from '@/lib/calendar'
 import { exportMonthCSV, copyTeamsSummary } from '@/lib/export-csv'
 import { runCompletenessChecks } from '@/lib/completeness-check'
+import { evaluatePackageDraft } from '@/lib/package-draft'
 import type { ReconciliationResult } from '@/lib/reconciliation'
 import { useAccountType } from '@/hooks/useAccountType'
 import type { WorkflowResult } from '@/lib/workflow-engine'
@@ -195,6 +196,13 @@ export function ClientDetailPage() {
   const requiredCount = requirements.filter(r => r.required).length
   const uploadedCount = requirements.filter(r => r.required && r.uploads.length > 0).length
   const allUploads = requirements.flatMap(r => r.uploads)
+  // P3 auto-draft: when completeness passes, package is ready without visiting Analysis.
+  const packageDraft = evaluatePackageDraft(
+    requirements,
+    period.year,
+    period.month,
+    parsedStatements.length > 0 ? parsedStatements : undefined,
+  )
 
   const handleZipDownload = async () => {
     setZipping(true)
@@ -204,6 +212,20 @@ export function ClientDetailPage() {
     checkAndFireTrigger(TRIGGER_FIRST_ZIP, () =>
       setNudge('How did that go? Was everything you needed in the ZIP?'),
     )
+  }
+
+  const handleDownloadPackage = async () => {
+    const m = await import('@/lib/finance-prep')
+    m.generateBookkeeperPackage({
+      businessName: client.business_name,
+      contactName: client.contact_name ?? '',
+      year: period.year,
+      month: period.month,
+      requirements,
+      completeness: packageDraft.completeness,
+      reconciliation: reconResult ?? undefined,
+      bookkeeperName: user?.email ?? undefined,
+    })
   }
 
   const handleSendReminder = async () => {
@@ -323,6 +345,57 @@ export function ClientDetailPage() {
       {nudge && (
         <div className="mb-4 rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
           {nudge}
+        </div>
+      )}
+
+      {/* P3 — Package auto-draft when completeness gate passes */}
+      {packageDraft.status === 'ready_for_review' && (
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3">
+          <div className="flex items-start gap-2">
+            <Package className="mt-0.5 h-5 w-5 shrink-0 text-emerald-700" />
+            <div>
+              <p className="text-sm font-semibold text-emerald-900">Package ready for review</p>
+              <p className="mt-0.5 text-xs text-emerald-800">
+                Completeness score {packageDraft.completeness.score}/100 · {packageDraft.uploadCount} file
+                {packageDraft.uploadCount === 1 ? '' : 's'} for {formatPeriod(period.year, period.month)}.
+                Download the HTML package and/or ZIP of source documents — nothing is auto-posted to your books.
+              </p>
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={handleDownloadPackage}
+              className="flex items-center gap-1.5 rounded-md bg-emerald-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-800"
+            >
+              <Package className="h-3.5 w-3.5" />
+              Download package
+            </button>
+            {tenantConfig.features.zipDownload && (plan === 'starter' || plan === 'pro') && packageDraft.canDownloadZip && (
+              <button
+                type="button"
+                onClick={handleZipDownload}
+                disabled={zipping}
+                className="flex items-center gap-1.5 rounded-md border border-emerald-300 bg-white px-3 py-1.5 text-xs font-medium text-emerald-900 hover:bg-emerald-50 disabled:opacity-50"
+              >
+                {zipping ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Archive className="h-3.5 w-3.5" />}
+                {zipping ? 'Zipping...' : 'Download ZIP'}
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => setActiveTab('export')}
+              className="text-xs font-medium text-emerald-800 underline-offset-2 hover:underline"
+            >
+              Export tab
+            </button>
+          </div>
+        </div>
+      )}
+      {packageDraft.status === 'incomplete' && packageDraft.uploadCount > 0 && (
+        <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          <p className="font-medium">Package not ready yet</p>
+          <p className="mt-0.5 text-xs text-amber-800">{packageDraft.label}</p>
         </div>
       )}
 
@@ -448,6 +521,11 @@ export function ClientDetailPage() {
           parsedStatements={parsedStatements}
           insights={insights}
           bookkeeperName={user?.email ?? 'Bookkeeper'}
+          packageDraft={packageDraft}
+          onDownloadPackage={handleDownloadPackage}
+          onDownloadZip={handleZipDownload}
+          zipping={zipping}
+          plan={plan}
           teamsCopied={teamsCopied}
           onTeamsCopy={() => {
             copyTeamsSummary(client.business_name, requirements, period.year, period.month)
@@ -1031,6 +1109,11 @@ function ExportTab({
   parsedStatements,
   insights,
   bookkeeperName,
+  packageDraft,
+  onDownloadPackage,
+  onDownloadZip,
+  zipping,
+  plan,
   teamsCopied,
   onTeamsCopy,
 }: {
@@ -1041,14 +1124,65 @@ function ExportTab({
   parsedStatements: StatementSummary[]
   insights: MonthlyInsights | null
   bookkeeperName: string
+  packageDraft: ReturnType<typeof evaluatePackageDraft>
+  onDownloadPackage: () => void
+  onDownloadZip: () => void
+  zipping: boolean
+  plan: string
   teamsCopied: boolean
   onTeamsCopy: () => void
 }) {
   const { isSolo: isBusinessOwnerMode } = useAccountType()
-  const report = runCompletenessChecks(requirements, parsedStatements)
+  const report = packageDraft.completeness
 
   return (
     <div className="space-y-4">
+      {/* Auto-draft status */}
+      <div
+        className={cn(
+          'rounded-lg border p-5',
+          packageDraft.status === 'ready_for_review'
+            ? 'border-emerald-200 bg-emerald-50'
+            : packageDraft.status === 'incomplete'
+              ? 'border-amber-200 bg-amber-50'
+              : 'border-gray-200 bg-white',
+        )}
+      >
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h4 className="text-sm font-semibold text-gray-900">
+              {packageDraft.status === 'ready_for_review' ? 'Package ready for review' : 'Month package draft'}
+            </h4>
+            <p className="mt-0.5 text-xs text-gray-600">{packageDraft.label}</p>
+            <p className="mt-1 text-xs text-gray-500">
+              Completeness {report.score}/100 · auto-drafted when required documents pass checks (no Analysis click required).
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={onDownloadPackage}
+              disabled={!packageDraft.canDownloadPackage}
+              className="flex items-center gap-1.5 rounded-md bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-light disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <Package className="h-4 w-4" />
+              {packageDraft.canDownloadPackage ? 'Download package' : 'Generate (blocked)'}
+            </button>
+            {tenantConfig.features.zipDownload && (plan === 'starter' || plan === 'pro') && (
+              <button
+                type="button"
+                onClick={onDownloadZip}
+                disabled={!packageDraft.canDownloadZip || zipping}
+                className="flex items-center gap-1.5 rounded-md border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+              >
+                {zipping ? <Loader2 className="h-4 w-4 animate-spin" /> : <Archive className="h-4 w-4" />}
+                ZIP sources
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+
       {/* Client Monthly Report (insights-based) */}
       {insights && (
         <div className="rounded-lg border border-primary/20 bg-primary/5 p-5">
@@ -1070,7 +1204,7 @@ function ExportTab({
         </div>
       )}
 
-      {/* Bookkeeper Package */}
+      {/* Bookkeeper Package (manual re-download) */}
       <div className="rounded-lg border border-gray-200 bg-white p-5">
         <div className="flex items-center justify-between">
           <div>
@@ -1078,26 +1212,17 @@ function ExportTab({
               {isBusinessOwnerMode ? 'Package for Bookkeeper' : 'Bookkeeper Package'}
             </h4>
             <p className="mt-0.5 text-xs text-gray-500">
-              Downloadable HTML report with reconciliation, missing docs, completeness score.
+              HTML report with completeness score, checklist, and optional reconciliation.
+              {reconResult ? ' Reconciliation data included when available.' : ' Run Analysis → reconciliation to enrich the report.'}
             </p>
           </div>
           <button
-            onClick={async () => {
-              const m = await import('@/lib/finance-prep')
-              m.generateBookkeeperPackage({
-                businessName: client.business_name,
-                contactName: client.contact_name ?? '',
-                year: period.year,
-                month: period.month,
-                requirements,
-                completeness: report,
-                reconciliation: reconResult ?? undefined,
-              })
-            }}
-            className="flex items-center gap-1.5 rounded-md bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-light"
+            onClick={onDownloadPackage}
+            disabled={!packageDraft.canDownloadPackage}
+            className="flex items-center gap-1.5 rounded-md bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-light disabled:cursor-not-allowed disabled:opacity-50"
           >
             <Package className="h-4 w-4" />
-            Generate
+            {packageDraft.canDownloadPackage ? 'Download' : 'Blocked'}
           </button>
         </div>
       </div>

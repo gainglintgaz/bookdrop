@@ -7,9 +7,10 @@ Full history: `CURRENT_SPRINT_ARCHIVE.md`
 ## Session 2026-07-11+ (multi-hour kickoff)
 
 - Worktree: `bookdrop-work-20260711` / branch `feat/bookdrop-session-20260711`
-- G0: build + 94 tests green
+- G0: build + tests green (100 after G3)
 - G1: `FOUNDER_ENV_CHECKLIST.md` + honest LandingPage (portal/reminders/ZIP)
 - G2: persist upload AI enrichment; Documents-tab exceptions strip
+- G3: package auto-draft on completeness → "Package ready for review"
 - G4: `INTEGRATION_FINKEEL.md`
 - See `PROGRESS.md` + `SESSION_LOG.md`
 
