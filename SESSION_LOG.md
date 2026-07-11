@@ -78,3 +78,10 @@ Append-only. Newest entries at bottom.
 - Phase 2: migration 010 RPCs applied; PortalConfirmPanel; portal-confirm.ts
 - Confirm proof strip: confirm-proof.ts + ClientConfirmProofStrip (ed595f7)
 - Phase 3: work-queue filters + docs work tabs; 126 tests
+
+### Phase 4 — Editable playbooks (Track C)
+- Allowlist only: extract_map, categorize, audit_duplicates, recon_unmatched, completeness, package_draft
+- `playbook-steps.ts` + `playbooks.ts` (demo store + cloud) + `run-playbook.ts` (audit runs)
+- Migration **011** applied via `supabase db query --linked` (`workflow_playbooks`, `workflow_runs` + RLS)
+- `PlaybookEditorPanel` on Client Detail → Analysis (create / reorder / soft-delete / run / recent runs)
+- 139 tests; `tsc --noEmit` clean

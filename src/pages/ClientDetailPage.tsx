@@ -43,6 +43,7 @@ const ReceiptScannerPanel = lazy(() => import('@/components/practitioner/Receipt
 const ActivityTimeline = lazy(() => import('@/components/practitioner/ActivityTimeline').then(m => ({ default: m.ActivityTimeline })))
 const MessagePanel = lazy(() => import('@/components/shared/MessagePanel').then(m => ({ default: m.MessagePanel })))
 const WorkflowLibraryPanel = lazy(() => import('@/components/practitioner/WorkflowLibraryPanel').then(m => ({ default: m.WorkflowLibraryPanel })))
+const PlaybookEditorPanel = lazy(() => import('@/components/practitioner/PlaybookEditorPanel').then(m => ({ default: m.PlaybookEditorPanel })))
 const ExceptionsQueue = lazy(() => import('@/components/practitioner/ExceptionsQueue').then(m => ({ default: m.ExceptionsQueue })))
 const ClientConfirmProofStrip = lazy(() => import('@/components/practitioner/ClientConfirmProofStrip').then(m => ({ default: m.ClientConfirmProofStrip })))
 import { checkAndFireTrigger, TRIGGER_FIRST_ZIP, TRIGGER_FIRST_REMINDER } from '@/lib/engagement-triggers'
@@ -459,6 +460,7 @@ export function ClientDetailPage() {
         <AnalysisTab
           requirements={requirements}
           client={client}
+          bookkeeperId={bookkeeperId ?? client.bookkeeper_id ?? 'bk-demo-001'}
           period={period}
           parsedStatements={parsedStatements}
           reconResult={reconResult}
@@ -913,6 +915,7 @@ const ANALYSIS_SECTIONS: { id: AnalysisSection; label: string; icon: typeof File
 function AnalysisTab({
   requirements,
   client,
+  bookkeeperId,
   period,
   parsedStatements,
   onStatementsParsed,
@@ -930,6 +933,7 @@ function AnalysisTab({
 }: {
   requirements: RequirementWithUploads[]
   client: Client
+  bookkeeperId: string
   period: { year: number; month: number }
   parsedStatements: StatementSummary[]
   onStatementsParsed: (s: StatementSummary[]) => void
@@ -1056,6 +1060,28 @@ function AnalysisTab({
             {workflowRunning ? 'Running month-end close…' : 'Run month-end close (service)'}
           </button>
         )}
+      </div>
+
+      {/* Phase 4 — editable playbooks (allowlist composition) */}
+      <div className="rounded-lg border border-gray-200 bg-white p-4">
+        <Suspense fallback={<LoadingSpinner size="sm" />}>
+          <PlaybookEditorPanel
+            bookkeeperId={bookkeeperId}
+            clientId={client.id}
+            clientName={client.business_name}
+            period={period}
+            executeCtx={{
+              clientId: client.id,
+              clientName: client.business_name,
+              period,
+              statements: parsedStatements,
+              requirements,
+              reconResult,
+            }}
+            onResult={onSetWorkflowResult}
+            onError={setWorkflowError}
+          />
+        </Suspense>
       </div>
 
       {/* Workflow Result Panel — executive summary */}
