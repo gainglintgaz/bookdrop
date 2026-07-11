@@ -97,13 +97,55 @@ const demoRequirements: Record<string, DocumentRequirement[]> = {
 
 // Some clients have uploads, some don't (realistic mix)
 const demoUploads: DocumentUpload[] = [
-  // Client 1: complete — all required uploaded
-  { id: 'up-001', requirement_id: 'req-001', client_id: 'client-001', bookkeeper_id: 'bk-demo-001', period_year: year, period_month: month, filename_original: 'chase_checking_apr2026.pdf', storage_path: 'demo/chase.pdf', file_size_bytes: 245_760, uploaded_at: '2026-04-02T14:30:00Z' },
-  { id: 'up-002', requirement_id: 'req-002', client_id: 'client-001', bookkeeper_id: 'bk-demo-001', period_year: year, period_month: month, filename_original: 'amex_business_apr2026.pdf', storage_path: 'demo/amex.pdf', file_size_bytes: 189_440, uploaded_at: '2026-04-02T14:31:00Z' },
+  // Client 1: complete — bank/CC include AI summaries for default-path exceptions UI
+  {
+    id: 'up-001', requirement_id: 'req-001', client_id: 'client-001', bookkeeper_id: 'bk-demo-001',
+    period_year: year, period_month: month, filename_original: 'chase_checking_apr2026.pdf',
+    storage_path: 'demo/chase.pdf', file_size_bytes: 245_760, uploaded_at: '2026-04-02T14:30:00Z',
+    auto_categorized_at: '2026-04-02T14:30:05Z', auto_categorization_confidence: 'medium',
+    parsed_summary: {
+      bankName: 'Chase', accountLast4: '1234', openingBalance: 12000, closingBalance: 13450,
+      totalCredits: 8200, totalDebits: 6750, transactionCount: 42,
+    },
+    categorization_summary: {
+      totalCategorized: 38, highConfidence: 28, mediumConfidence: 7, lowConfidence: 3,
+      byCategory: { 'Office Supplies': 4, 'Software': 6, 'Meals': 5, 'Uncategorized': 3 },
+      flagsCount: 1,
+    },
+  },
+  {
+    id: 'up-002', requirement_id: 'req-002', client_id: 'client-001', bookkeeper_id: 'bk-demo-001',
+    period_year: year, period_month: month, filename_original: 'amex_business_apr2026.pdf',
+    storage_path: 'demo/amex.pdf', file_size_bytes: 189_440, uploaded_at: '2026-04-02T14:31:00Z',
+    auto_categorized_at: '2026-04-02T14:31:04Z', auto_categorization_confidence: 'high',
+    parsed_summary: {
+      bankName: 'Amex', accountLast4: '1005', openingBalance: null, closingBalance: null,
+      totalCredits: 0, totalDebits: 4120, transactionCount: 18,
+    },
+    categorization_summary: {
+      totalCategorized: 18, highConfidence: 15, mediumConfidence: 3, lowConfidence: 0,
+      byCategory: { 'Travel': 4, 'Software': 5, 'Meals': 3 },
+      flagsCount: 0,
+    },
+  },
   { id: 'up-003', requirement_id: 'req-004', client_id: 'client-001', bookkeeper_id: 'bk-demo-001', period_year: year, period_month: month, filename_original: 'gusto_payroll_apr2026.pdf', storage_path: 'demo/gusto.pdf', file_size_bytes: 102_400, uploaded_at: '2026-04-03T09:15:00Z' },
 
   // Client 2: partial — 1 of 2 required
-  { id: 'up-004', requirement_id: 'req-005', client_id: 'client-002', bookkeeper_id: 'bk-demo-001', period_year: year, period_month: month, filename_original: 'wellsfargo_apr2026.pdf', storage_path: 'demo/wf.pdf', file_size_bytes: 312_320, uploaded_at: '2026-04-04T11:00:00Z' },
+  {
+    id: 'up-004', requirement_id: 'req-005', client_id: 'client-002', bookkeeper_id: 'bk-demo-001',
+    period_year: year, period_month: month, filename_original: 'wellsfargo_apr2026.pdf',
+    storage_path: 'demo/wf.pdf', file_size_bytes: 312_320, uploaded_at: '2026-04-04T11:00:00Z',
+    auto_categorized_at: '2026-04-04T11:00:06Z', auto_categorization_confidence: 'low',
+    parsed_summary: {
+      bankName: 'Wells Fargo', accountLast4: '7788', openingBalance: 5000, closingBalance: 4800,
+      totalCredits: 2000, totalDebits: 2200, transactionCount: 25,
+    },
+    categorization_summary: {
+      totalCategorized: 20, highConfidence: 10, mediumConfidence: 5, lowConfidence: 5,
+      byCategory: { 'Uncategorized': 5, 'Utilities': 3 },
+      flagsCount: 2,
+    },
+  },
 
   // Client 3: complete
   { id: 'up-005', requirement_id: 'req-008', client_id: 'client-003', bookkeeper_id: 'bk-demo-001', period_year: year, period_month: month, filename_original: 'bofa_checking_apr.pdf', storage_path: 'demo/bofa.pdf', file_size_bytes: 276_480, uploaded_at: '2026-04-01T08:00:00Z' },

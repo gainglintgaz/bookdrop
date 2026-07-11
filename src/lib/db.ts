@@ -148,6 +148,36 @@ export async function uploadDocumentFile(
   return data
 }
 
+/**
+ * Persist AI-first pivot D.1 enrichment after a successful upload.
+ * Never throws to the caller for demo mode; cloud failures surface as thrown errors
+ * so UploadPage can log + keep local UI state.
+ */
+export async function updateUploadAiEnrichment(
+  uploadId: string,
+  enrichment: {
+    auto_categorized_at: string
+    auto_categorization_confidence: 'high' | 'medium' | 'low'
+    parsed_summary: DocumentUpload['parsed_summary']
+    categorization_summary: DocumentUpload['categorization_summary']
+  },
+): Promise<void> {
+  if (isDemoMode) return
+  if (uploadId.startsWith('demo-upload-')) return
+
+  const { error } = await supabase
+    .from('document_uploads')
+    .update({
+      auto_categorized_at: enrichment.auto_categorized_at,
+      auto_categorization_confidence: enrichment.auto_categorization_confidence,
+      parsed_summary: enrichment.parsed_summary,
+      categorization_summary: enrichment.categorization_summary,
+    })
+    .eq('id', uploadId)
+
+  if (error) throw new Error(`AI enrichment update failed: ${error.message}`)
+}
+
 // ─── POST-UPLOAD NOTIFICATION ───────────────────────────────────────────────
 
 /** Fire-and-forget notification to bookkeeper after a successful upload. */

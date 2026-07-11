@@ -1,8 +1,17 @@
 # CURRENT_SPRINT — BookDrop
 
-Last updated: 2026-05-13
-Status: **V1 schema live · code complete · awaiting manual launch steps**
+Last updated: 2026-07-11
+Status: **Thin portal + close-PREP path · session worktree active · cloud still blocked on founder secrets**
 Full history: `CURRENT_SPRINT_ARCHIVE.md`
+
+## Session 2026-07-11+ (multi-hour kickoff)
+
+- Worktree: `bookdrop-work-20260711` / branch `feat/bookdrop-session-20260711`
+- G0: build + 94 tests green
+- G1: `FOUNDER_ENV_CHECKLIST.md` + honest LandingPage (portal/reminders/ZIP)
+- G2: persist upload AI enrichment; Documents-tab exceptions strip
+- G4: `INTEGRATION_FINKEEL.md`
+- See `PROGRESS.md` + `SESSION_LOG.md`
 
 ## Current state
 

@@ -517,10 +517,58 @@ function DocumentsTab({
     return <p className="py-8 text-center text-sm text-gray-400">No document requirements configured.</p>
   }
 
+  // Default-path exceptions (AI-first D.1) — surface without Analysis tab.
+  const categorizedUploads = requirements.flatMap(r =>
+    r.uploads
+      .filter(u => u.categorization_summary && u.parsed_summary)
+      .map(u => ({ req: r, upload: u })),
+  )
+  const lowConfidenceTotal = categorizedUploads.reduce(
+    (sum, { upload }) => sum + (upload.categorization_summary?.lowConfidence ?? 0),
+    0,
+  )
+  const flagsTotal = categorizedUploads.reduce(
+    (sum, { upload }) => sum + (upload.categorization_summary?.flagsCount ?? 0),
+    0,
+  )
+
   return (
     <div className="space-y-3">
+      {categorizedUploads.length > 0 && (
+        <div
+          className={cn(
+            'rounded-lg border px-4 py-3 text-sm',
+            lowConfidenceTotal > 0 || flagsTotal > 0
+              ? 'border-amber-200 bg-amber-50 text-amber-900'
+              : 'border-emerald-200 bg-emerald-50 text-emerald-900',
+          )}
+        >
+          <div className="flex items-start gap-2">
+            {lowConfidenceTotal > 0 || flagsTotal > 0 ? (
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+            ) : (
+              <CheckCircle className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
+            )}
+            <div>
+              <p className="font-medium">
+                {lowConfidenceTotal > 0 || flagsTotal > 0
+                  ? 'Exceptions from auto-categorization'
+                  : 'Uploads categorized on receipt'}
+              </p>
+              <p className="mt-0.5 text-xs opacity-90">
+                {categorizedUploads.length} statement upload{categorizedUploads.length === 1 ? '' : 's'} processed on the default path
+                {lowConfidenceTotal > 0 && ` · ${lowConfidenceTotal} low-confidence line${lowConfidenceTotal === 1 ? '' : 's'}`}
+                {flagsTotal > 0 && ` · ${flagsTotal} flag${flagsTotal === 1 ? '' : 's'}`}
+                . Open Analysis only if you want full transaction detail — this strip is the exception queue.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
       {requirements.map(req => {
         const hasUpload = req.uploads.length > 0
+        const latest = req.uploads[req.uploads.length - 1]
+        const lowConf = latest?.categorization_summary?.lowConfidence ?? 0
         return (
           <div
             key={req.id}
@@ -540,6 +588,16 @@ function DocumentsTab({
                 <p className="text-xs text-gray-500">
                   {req.required ? 'Required' : 'Optional'}
                   {req.doc_type !== 'other' && ` · ${formatDocType(req.doc_type)}`}
+                  {latest?.auto_categorized_at && (
+                    <>
+                      {' · '}
+                      <span className={lowConf > 0 ? 'text-amber-700' : 'text-emerald-700'}>
+                        {lowConf > 0
+                          ? `${lowConf} need review`
+                          : `categorized (${latest.auto_categorization_confidence ?? 'ok'})`}
+                      </span>
+                    </>
+                  )}
                 </p>
               </div>
             </div>

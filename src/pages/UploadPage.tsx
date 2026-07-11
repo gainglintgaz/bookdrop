@@ -4,7 +4,7 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import { useParams } from 'react-router-dom'
-import { fetchClientByToken, uploadDocumentFile, notifyBookkeeperOfUpload, fetchEngagementLettersForPortal } from '@/lib/db'
+import { fetchClientByToken, uploadDocumentFile, notifyBookkeeperOfUpload, fetchEngagementLettersForPortal, updateUploadAiEnrichment } from '@/lib/db'
 import { tenantConfig } from '@/lib/tenant.config'
 import { formatPeriod, cn } from '@/lib/utils'
 import { computeSubmissionStatus, getMissingDocuments } from '@/types'
@@ -86,19 +86,30 @@ export function UploadPage() {
       )
 
       // ── AI-first pivot D.1: auto-categorize at upload moment ─────────────
-      // Run the parser + categorization in parallel with the visible UI update.
-      // Failures here NEVER block the upload (per ai-first-principles.md §5
-      // anti-fabrication rule 6 — silent failure surfaces a real placeholder).
+      // Failures here NEVER block the upload (per ai-first-principles.md §5).
       let enriched: DocumentUpload = upload
       try {
         const result = await autoCategorizeUpload(file, docType)
         if (result) {
+          const auto_categorized_at = new Date().toISOString()
           enriched = {
             ...upload,
-            auto_categorized_at: new Date().toISOString(),
+            auto_categorized_at,
             auto_categorization_confidence: result.aggregateConfidence,
             parsed_summary: result.parsedSummary,
             categorization_summary: result.categorizationSummary,
+          }
+          // Persist summaries so bookkeeper Documents tab can show exceptions
+          // without reopening the Analysis tab.
+          try {
+            await updateUploadAiEnrichment(upload.id, {
+              auto_categorized_at,
+              auto_categorization_confidence: result.aggregateConfidence,
+              parsed_summary: result.parsedSummary,
+              categorization_summary: result.categorizationSummary,
+            })
+          } catch (persistErr) {
+            console.warn('[UploadPage] AI enrichment not persisted — UI still shows receipt:', persistErr)
           }
         }
       } catch (err) {

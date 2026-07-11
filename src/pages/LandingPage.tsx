@@ -25,8 +25,8 @@ const howItWorks = [
   },
   {
     step: '3',
-    title: 'Review ready-made packages',
-    description: 'Documents are auto-categorized, parsed, and reconciled. Download everything as a bookkeeper-ready ZIP or export to QuickBooks.',
+    title: 'Track status, remind, download',
+    description: 'See who submitted and who is late. Send reminders on a schedule. Download the month as a ZIP when you are ready.',
     icon: CheckCircle,
   },
 ]
@@ -34,41 +34,41 @@ const howItWorks = [
 const features = [
   {
     icon: Zap,
-    title: 'Smart Statement Parser',
-    description: 'Auto-extract transactions, balances, and dates from bank and credit card statements. CSV and PDF supported.',
+    title: 'Magic-link client portal',
+    description: 'Clients upload without creating an account. You control required documents per client and period.',
   },
   {
     icon: BarChart3,
-    title: 'Auto-Categorization',
-    description: '200+ vendor database with IRS deduction mapping. Transactions categorized automatically on upload.',
+    title: 'Submission status',
+    description: 'Know which clients are complete, partial, or missing docs for the current month — at a glance.',
   },
   {
     icon: Brain,
-    title: 'Smart Document Analysis',
-    description: 'Flag personal expenses mixed with business, surface patterns, and organize documents by category automatically.',
+    title: 'Close-prep helpers',
+    description: 'Bank/CC statements can be parsed and categorized on upload so low-confidence items surface for review. You stay in control of the books.',
   },
   {
     icon: Camera,
-    title: 'Receipt Scanner',
-    description: 'Clients can snap photos, upload files, or paste from clipboard. OCR extracts vendor, amount, and date.',
+    title: 'Receipt and file drop',
+    description: 'Clients can drag-and-drop files or use their phone camera. Everything lands in one place for the period.',
   },
   {
     icon: Package,
-    title: 'Bookkeeper Packages',
-    description: 'Export reconciled data to QuickBooks, Xero, or OFX. Download complete monthly packages as ZIP.',
+    title: 'ZIP download',
+    description: 'Download a month of client documents as a ZIP for your desktop tools or your CPA handoff.',
   },
   {
     icon: Send,
-    title: 'Smart Reminders',
-    description: 'Auto-escalating email reminders on your schedule. Friendly first, then firm. Manual one-click reminders too.',
+    title: 'Scheduled reminders',
+    description: 'Auto reminders on your day-of-month schedule (Starter+), plus one-click manual nudges. Reply-to is your email.',
   },
 ]
 
 const socialProof = [
-  { value: '200+', label: 'Vendor database' },
-  { value: '5', label: 'Export formats' },
-  { value: '11', label: 'Intelligence engines' },
-  { value: '16', label: 'Built-in analysis engines' },
+  { value: '3', label: 'Steps to collect docs' },
+  { value: '0', label: 'Client accounts required' },
+  { value: 'ZIP', label: 'Month download' },
+  { value: 'Free', label: 'Up to 3 clients' },
 ]
 
 const pricing = [
@@ -97,8 +97,8 @@ const pricing = [
       'Everything in Free',
       'Auto-reminders',
       'ZIP downloads',
-      'Auto-reconciliation',
-      'Bookkeeper packages',
+      'Upload categorization summaries',
+      'Month package export tools',
     ],
     cta: 'Start Free Trial',
     highlighted: true,
@@ -145,10 +145,10 @@ const soloPricing = [
     features: [
       '1 business entity',
       'Everything in Free',
-      'Full 16-engine analysis pipeline',
+      'Close-prep analysis tools',
       'Finance prep packages',
-      'QuickBooks / Xero export',
-      'Cash flow forecasting',
+      'Export helpers (CSV / common formats)',
+      'Cash flow views when you have data',
     ],
     cta: 'Start Free Trial',
     highlighted: true,
