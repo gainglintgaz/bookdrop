@@ -14,8 +14,9 @@ Thin portal + close-PREP; FinKeel remains flagship. Not competing with TaxDome /
 | **P2** | AI on default path | ✅ | Persist AI enrichment; Documents exceptions strip; demo data shows exceptions; client portal receipt already existed |
 | **P3** | Month package auto-draft | ✅ | `evaluatePackageDraft` auto when completeness passes; banner + Export tab "Package ready for review"; HTML package + ZIP |
 | **P4** | FinKeel merge contract | ✅ | `INTEGRATION_FINKEEL.md` |
-| **P5** | Stretch workflow executor | ❌ | Deferred |
+| **P5 / G5** | month-end-close-service live | ✅ | `workflows/execute.ts` + Analysis library Run |
 | **D.5** | Dashboard urgency sort | ✅ | `urgency.ts` + Dashboard “Needs your attention first” + table column |
+| **Corrections** | Documents-tab exceptions queue | ✅ | `ExceptionsQueue` + `recordCorrection` default path |
 
 ## Mode
 - Local `.env`: Supabase URL/anon present; **`VITE_MODE` unset → defaults to `demo`** (`src/lib/mode.ts`)

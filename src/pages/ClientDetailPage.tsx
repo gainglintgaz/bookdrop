@@ -41,6 +41,8 @@ const ExpensePolicyPanel = lazy(() => import('@/components/practitioner/ExpenseP
 const ReceiptScannerPanel = lazy(() => import('@/components/practitioner/ReceiptScannerPanel').then(m => ({ default: m.ReceiptScannerPanel })))
 const ActivityTimeline = lazy(() => import('@/components/practitioner/ActivityTimeline').then(m => ({ default: m.ActivityTimeline })))
 const MessagePanel = lazy(() => import('@/components/shared/MessagePanel').then(m => ({ default: m.MessagePanel })))
+const WorkflowLibraryPanel = lazy(() => import('@/components/practitioner/WorkflowLibraryPanel').then(m => ({ default: m.WorkflowLibraryPanel })))
+const ExceptionsQueue = lazy(() => import('@/components/practitioner/ExceptionsQueue').then(m => ({ default: m.ExceptionsQueue })))
 import { checkAndFireTrigger, TRIGGER_FIRST_ZIP, TRIGGER_FIRST_REMINDER } from '@/lib/engagement-triggers'
 import { fetchEngagementLetters, uploadEngagementLetter } from '@/lib/db'
 import type { EngagementLetterWithSignature } from '@/types'
@@ -97,6 +99,7 @@ export function ClientDetailPage() {
   const [uploadingLetter, setUploadingLetter] = useState(false)
   const [letterLabel, setLetterLabel] = useState('')
   const user = useAuthStore(state => state.user)
+  const bookkeeperId = useAuthStore(state => state.bookkeeper?.id ?? null)
   const plan = useAuthStore(state => state.bookkeeper?.plan ?? 'free')
 
   const fetchData = useCallback(async () => {
@@ -436,6 +439,7 @@ export function ClientDetailPage() {
           letterLabel={letterLabel}
           setLetterLabel={setLetterLabel}
           user={user}
+          bookkeeperId={bookkeeperId ?? user?.id ?? null}
           onLetterUploaded={async () => {
             if (!clientId) return
             const updated = await fetchEngagementLetters(clientId)
@@ -452,6 +456,8 @@ export function ClientDetailPage() {
           client={client}
           period={period}
           parsedStatements={parsedStatements}
+          reconResult={reconResult}
+          onSetReconResult={setReconResult}
           onStatementsParsed={async (stmts) => {
             setParsedStatements(stmts)
             // Auto-run ALL intelligence engines when statements are parsed
@@ -480,7 +486,6 @@ export function ClientDetailPage() {
               setPolicyReport(policyMod.checkExpensePolicy(allTxns))
             }
           }}
-          reconResult={reconResult}
           onRunReconciliation={async () => {
             const reconMod = await import('@/lib/reconciliation')
             if (parsedStatements.length > 0) {
@@ -577,6 +582,7 @@ function DocumentsTab({
   letterLabel,
   setLetterLabel,
   user,
+  bookkeeperId,
   onLetterUploaded,
   setUploadingLetter,
 }: {
@@ -588,6 +594,7 @@ function DocumentsTab({
   letterLabel: string
   setLetterLabel: (v: string) => void
   user: { id: string } | null
+  bookkeeperId: string | null
   onLetterUploaded: () => Promise<void>
   setUploadingLetter: (v: boolean) => void
 }) {
@@ -637,11 +644,20 @@ function DocumentsTab({
                 {categorizedUploads.length} statement upload{categorizedUploads.length === 1 ? '' : 's'} processed on the default path
                 {lowConfidenceTotal > 0 && ` · ${lowConfidenceTotal} low-confidence line${lowConfidenceTotal === 1 ? '' : 's'}`}
                 {flagsTotal > 0 && ` · ${flagsTotal} flag${flagsTotal === 1 ? '' : 's'}`}
-                . Open Analysis only if you want full transaction detail — this strip is the exception queue.
+                . Correct lines below when needed — Analysis is optional for full detail.
               </p>
             </div>
           </div>
         </div>
+      )}
+      {lowConfidenceTotal > 0 && (
+        <Suspense fallback={null}>
+          <ExceptionsQueue
+            requirements={requirements}
+            clientId={client.id}
+            bookkeeperId={bookkeeperId}
+          />
+        </Suspense>
       )}
       {requirements.map(req => {
         const hasUpload = req.uploads.length > 0
@@ -811,6 +827,7 @@ function AnalysisTab({
   parsedStatements,
   onStatementsParsed,
   reconResult,
+  onSetReconResult,
   onRunReconciliation,
   insights,
   categorizationReport,
@@ -827,6 +844,7 @@ function AnalysisTab({
   parsedStatements: StatementSummary[]
   onStatementsParsed: (s: StatementSummary[]) => void
   reconResult: ReconciliationResult | null
+  onSetReconResult: (r: ReconciliationResult | null) => void
   onRunReconciliation: () => void
   insights: MonthlyInsights | null
   categorizationReport: CategorizationReport | null
@@ -838,7 +856,41 @@ function AnalysisTab({
   onSetWorkflowResult: (r: WorkflowResult | null) => void
 }) {
   const [section, setSection] = useState<AnalysisSection>('parse')
+  const [workflowError, setWorkflowError] = useState<string | null>(null)
+  const [workflowRunning, setWorkflowRunning] = useState(false)
   const hasParsed = parsedStatements.length > 0
+
+  async function runMonthEndClose() {
+    setWorkflowRunning(true)
+    setWorkflowError(null)
+    try {
+      const { executeWorkflowById } = await import('@/lib/workflows/execute')
+      const outcome = executeWorkflowById('month-end-close-service', {
+        clientId: client.id,
+        clientName: client.business_name,
+        period,
+        statements: parsedStatements,
+        requirements,
+        reconResult,
+      })
+      if (!outcome.ok) {
+        setWorkflowError(outcome.error)
+        if (outcome.result) onSetWorkflowResult(outcome.result)
+        return
+      }
+      onSetWorkflowResult(outcome.result)
+      // Keep recon in parent when we can recompute
+      if (parsedStatements.length > 0) {
+        const reconMod = await import('@/lib/reconciliation')
+        const recon = reconMod.reconcileFromParsedStatements(parsedStatements, requirements)
+        if (recon) onSetReconResult(recon)
+      }
+    } catch (err) {
+      setWorkflowError(err instanceof Error ? err.message : 'Workflow failed')
+    } finally {
+      setWorkflowRunning(false)
+    }
+  }
 
   // NOTE: per Trust Ladder gating refactor (.claude/rules/ai-first-principles.md §3),
   // the "limited data" banner is no longer rendered at this level. Each engine panel
@@ -884,18 +936,41 @@ function AnalysisTab({
         })}
       </div>
 
+      {/* G5 — Workflow library + live month-end close */}
+      <div className="rounded-lg border border-gray-200 bg-white p-4">
+        <Suspense fallback={<LoadingSpinner size="sm" />}>
+          <WorkflowLibraryPanel
+            category="close"
+            onRunWorkflow={async (w) => {
+              if (w.id === 'month-end-close-service') {
+                await runMonthEndClose()
+                return
+              }
+              setWorkflowError(`"${w.label}" is not live yet.`)
+            }}
+          />
+        </Suspense>
+        {workflowError && (
+          <p className="mt-3 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
+            {workflowError}
+          </p>
+        )}
+        {hasParsed && (
+          <button
+            type="button"
+            disabled={workflowRunning}
+            onClick={() => void runMonthEndClose()}
+            className="mt-3 flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-700 disabled:opacity-50"
+          >
+            <Zap className="h-4 w-4" />
+            {workflowRunning ? 'Running month-end close…' : 'Run month-end close (service)'}
+          </button>
+        )}
+      </div>
+
       {/* Workflow Result Panel — executive summary */}
       {workflowResult && (
         <WorkflowResultPanel result={workflowResult} />
-      )}
-      {!workflowResult && hasParsed && (
-        <button
-          onClick={async () => { const m = await import('@/lib/workflow-engine'); onSetWorkflowResult(m.getDemoWorkflowResult()) }}
-          className="flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-700"
-        >
-          <Zap className="h-4 w-4" />
-          Run Full Pipeline
-        </button>
       )}
 
       {/* Prompt to parse first */}

@@ -63,3 +63,9 @@ Append-only. Newest entries at bottom.
 - `src/lib/urgency.ts` + Dashboard sort/badges
 - `VICTOR_LAUNCH_ORDER.md` — Vercel + R2 clicks only
 - 104 tests
+
+### G5 + default-path corrections
+- `workflows/execute.ts` — month-end-close-service live (parse/cat/audit + recon + completeness + package status)
+- Registry status live; Analysis wires WorkflowLibraryPanel + real run (no getDemoWorkflowResult for primary path)
+- `exceptions-queue.ts` + `ExceptionsQueue` on Documents tab → recordCorrection + category-memory
+- 111 tests
