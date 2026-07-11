@@ -57,6 +57,8 @@ export interface Client {
   notes_for_client: string | null
   is_active: boolean
   created_at: string
+  /** Migration 009 — portal confirm policy (per-client, not one-size-fits-all). */
+  confirm_policy?: 'off' | 'low_confidence' | 'all_lines'
 }
 
 export interface DocumentRequirement {

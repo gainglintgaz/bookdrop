@@ -288,6 +288,8 @@ export function UploadPage() {
               requirement={req}
               onUpload={handleUpload}
               uploading={uploadingRequirementId === req.id}
+              portalToken={token}
+              confirmPolicy="low_confidence"
             />
           ))}
         </div>

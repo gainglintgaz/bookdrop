@@ -74,5 +74,5 @@ Append-only. Newest entries at bottom.
 - Locked: magic-link confirm, real line table, playbooks after 2, accounts later separate
 - Design: `BOOKDROP_PHASE_0_2_DESIGN.md` (audit + FinKeel source_kind borrow)
 - Phase 0: stub workflows not runnable
-- Phase 1: migration 009, document-lines insert on upload, exceptions prefer lines
-- Phase 2 portal confirm: design complete, UI not shipped yet
+- Phase 1: migration 009 **applied live** via `supabase db query --linked`; document-lines insert
+- Phase 2: migration 010 RPCs applied; PortalConfirmPanel; portal-confirm.ts; 116 tests

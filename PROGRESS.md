@@ -18,8 +18,8 @@ Thin portal + close-PREP; FinKeel remains flagship. Not competing with TaxDome /
 | **D.5** | Dashboard urgency sort | ✅ | `urgency.ts` + Dashboard “Needs your attention first” + table column |
 | **Corrections** | Documents-tab exceptions queue | ✅ | `ExceptionsQueue` + `recordCorrection` default path |
 | **Phase 0** | Workflow honesty | ✅ | Stub = Preview only (not runnable) |
-| **Phase 1** | Line table + write path | 🟡 | Migration 009 + `document-lines` + upload insert; apply migration on Supabase still founder/MCP |
-| **Phase 2** | Portal confirm UX | 📋 | Designed in `BOOKDROP_PHASE_0_2_DESIGN.md` — build next |
+| **Phase 1** | Line table + write path | ✅ | Migration **009 applied** on BookDrop (`mvvadmlivrpyawmlaqye`); lines insert on upload |
+| **Phase 2** | Portal confirm UX | ✅ | RPCs 010 applied; `PortalConfirmPanel` + audit fingerprint; demo localStorage path |
 
 ## Mode
 - Local `.env`: Supabase URL/anon present; **`VITE_MODE` unset → defaults to `demo`** (`src/lib/mode.ts`)

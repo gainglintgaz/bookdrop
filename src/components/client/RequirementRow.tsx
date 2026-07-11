@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import { cn, formatFileSize, formatDocType } from '@/lib/utils'
 import { FileDropzone } from '@/components/client/FileDropzone'
+import { PortalConfirmPanel } from '@/components/client/PortalConfirmPanel'
+import type { ConfirmPolicy } from '@/lib/portal-confirm'
 import type { RequirementWithUploads } from '@/types'
 import { CheckCircle, FileText, AlertCircle, Loader2, X, Sparkles } from 'lucide-react'
 
@@ -8,9 +10,18 @@ interface RequirementRowProps {
   requirement: RequirementWithUploads
   onUpload: (requirementId: string, file: File) => Promise<void>
   uploading: boolean
+  /** Magic-link token for Phase 2 confirm (optional). */
+  portalToken?: string
+  confirmPolicy?: ConfirmPolicy
 }
 
-export function RequirementRow({ requirement, onUpload, uploading }: RequirementRowProps) {
+export function RequirementRow({
+  requirement,
+  onUpload,
+  uploading,
+  portalToken,
+  confirmPolicy = 'low_confidence',
+}: RequirementRowProps) {
   const [uploadError, setUploadError] = useState<string | null>(null)
   const hasUpload = requirement.uploads.length > 0
   const latestUpload = hasUpload ? requirement.uploads[requirement.uploads.length - 1] : null
@@ -90,22 +101,42 @@ export function RequirementRow({ requirement, onUpload, uploading }: Requirement
               We classified {latestUpload.categorization_summary.totalCategorized} of {latestUpload.parsed_summary.transactionCount} transactions
             </span>
           </div>
-          {latestUpload.categorization_summary.lowConfidence > 0 && (
+          {latestUpload.client_confirmed_at && (
             <p className="mt-1 text-xs text-emerald-700">
-              {latestUpload.categorization_summary.lowConfidence} need review by your bookkeeper.
+              You finished confirming these lines
               {' '}
-              <span className="text-emerald-600/80">
-                You don't have to do anything — this is just a receipt.
-              </span>
+              {new Date(latestUpload.client_confirmed_at).toLocaleString()}.
             </p>
           )}
-          {latestUpload.categorization_summary.lowConfidence === 0 && (
+          {!latestUpload.client_confirmed_at && latestUpload.categorization_summary.lowConfidence > 0 && (
             <p className="mt-1 text-xs text-emerald-700">
-              Your bookkeeper will review and confirm before close.
+              {latestUpload.categorization_summary.lowConfidence} need your quick confirm below
+              (or your bookkeeper can finish later).
+            </p>
+          )}
+          {!latestUpload.client_confirmed_at && latestUpload.categorization_summary.lowConfidence === 0 && (
+            <p className="mt-1 text-xs text-emerald-700">
+              Your bookkeeper will review before close.
             </p>
           )}
         </div>
       )}
+
+      {/* Phase 2 — magic-link confirm (auditable) */}
+      {portalToken &&
+        latestUpload &&
+        latestUpload.auto_categorized_at &&
+        !latestUpload.client_confirmed_at &&
+        confirmPolicy !== 'off' &&
+        (confirmPolicy === 'all_lines' ||
+          (latestUpload.categorization_summary?.lowConfidence ?? 0) > 0) && (
+          <PortalConfirmPanel
+            portalToken={portalToken}
+            uploadId={latestUpload.id}
+            filename={latestUpload.filename_original}
+            policy={confirmPolicy}
+          />
+        )}
 
       {/* Upload area — always show to allow re-upload */}
       {uploading ? (
