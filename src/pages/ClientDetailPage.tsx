@@ -43,6 +43,7 @@ const ActivityTimeline = lazy(() => import('@/components/practitioner/ActivityTi
 const MessagePanel = lazy(() => import('@/components/shared/MessagePanel').then(m => ({ default: m.MessagePanel })))
 const WorkflowLibraryPanel = lazy(() => import('@/components/practitioner/WorkflowLibraryPanel').then(m => ({ default: m.WorkflowLibraryPanel })))
 const ExceptionsQueue = lazy(() => import('@/components/practitioner/ExceptionsQueue').then(m => ({ default: m.ExceptionsQueue })))
+const ClientConfirmProofStrip = lazy(() => import('@/components/practitioner/ClientConfirmProofStrip').then(m => ({ default: m.ClientConfirmProofStrip })))
 import { checkAndFireTrigger, TRIGGER_FIRST_ZIP, TRIGGER_FIRST_REMINDER } from '@/lib/engagement-triggers'
 import { fetchEngagementLetters, uploadEngagementLetter } from '@/lib/db'
 import type { EngagementLetterWithSignature } from '@/types'
@@ -617,8 +618,17 @@ function DocumentsTab({
     0,
   )
 
+  const allPeriodUploads = requirements.flatMap(r => r.uploads)
+
   return (
     <div className="space-y-3">
+      <Suspense fallback={null}>
+        <ClientConfirmProofStrip
+          clientId={client.id}
+          bookkeeperId={bookkeeperId}
+          uploads={allPeriodUploads}
+        />
+      </Suspense>
       {categorizedUploads.length > 0 && (
         <div
           className={cn(
