@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useClients } from '@/hooks/useClients'
 import { usePlanGating } from '@/hooks/usePlanGating'
@@ -19,6 +19,14 @@ import {
 } from 'lucide-react'
 import type { SubmissionStatus, ClientWithStatus } from '@/types'
 import { sortClientsByUrgency, urgencyBandLabel, type UrgencyResult } from '@/lib/urgency'
+import {
+  DASHBOARD_FILTERS,
+  countByFilter,
+  filterClientsByWorkQueue,
+  loadSavedDashboardFilter,
+  saveDashboardFilter,
+  type DashboardFilterId,
+} from '@/lib/work-queue'
 
 const PORTAL_BASE = `${window.location.origin}/upload/`
 
@@ -46,6 +54,16 @@ export function DashboardPage() {
   const { clients, loading, error, period, setPeriod, refresh } = useClients()
   const { canAddClient, isAtLimit, upgradeMessage } = usePlanGating(clients.length)
   const bookkeeper = useAuthStore(state => state.bookkeeper)
+  const [workFilter, setWorkFilter] = useState<DashboardFilterId>('all')
+
+  useEffect(() => {
+    setWorkFilter(loadSavedDashboardFilter())
+  }, [])
+
+  function onWorkFilter(id: DashboardFilterId) {
+    setWorkFilter(id)
+    saveDashboardFilter(id)
+  }
 
   // ---- Summary Stats ----
   const counts: Record<SubmissionStatus, number> = {
@@ -72,12 +90,20 @@ export function DashboardPage() {
     : 0
 
   // D.5 — sort everyone by urgency (who needs attention now)
-  const clientsByUrgency = sortClientsByUrgency(clients)
-  const clientsMissing = clientsByUrgency.filter(
+  const clientsByUrgency = useMemo(() => sortClientsByUrgency(clients), [clients])
+  const filterCounts = useMemo(
+    () => countByFilter(clientsByUrgency, period),
+    [clientsByUrgency, period],
+  )
+  const filteredByQueue = useMemo(
+    () => filterClientsByWorkQueue(clientsByUrgency, workFilter, period),
+    [clientsByUrgency, workFilter, period],
+  )
+  const clientsMissing = filteredByQueue.filter(
     c => c.submissionStatus === 'not_started' || c.submissionStatus === 'missing',
   )
-  const clientsPartial = clientsByUrgency.filter(c => c.submissionStatus === 'partial')
-  const clientsComplete = clientsByUrgency.filter(c => c.submissionStatus === 'complete')
+  const clientsPartial = filteredByQueue.filter(c => c.submissionStatus === 'partial')
+  const clientsComplete = filteredByQueue.filter(c => c.submissionStatus === 'complete')
 
   // ---- Loading ----
   if (loading) {
@@ -218,6 +244,41 @@ export function DashboardPage() {
         />
       </div>
 
+      {/* Phase 3 — work queue filters (customizable, persisted) */}
+      {clients.length > 0 && (
+        <div className="mb-6">
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-400">
+              Work queue
+            </h2>
+            <span className="text-[11px] text-gray-400">
+              Filter saved in this browser · counts are real for this period
+            </span>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {DASHBOARD_FILTERS.map(f => (
+              <button
+                key={f.id}
+                type="button"
+                title={f.description}
+                onClick={() => onWorkFilter(f.id)}
+                className={cn(
+                  'rounded-full border px-3 py-1.5 text-xs font-medium transition-colors',
+                  workFilter === f.id
+                    ? 'border-primary bg-primary text-white'
+                    : 'border-gray-200 bg-white text-gray-700 hover:border-primary/40',
+                )}
+              >
+                {f.label}
+                <span className={cn('ml-1.5 tabular-nums', workFilter === f.id ? 'text-white/80' : 'text-gray-400')}>
+                  {filterCounts[f.id]}
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* ---- Two Column Layout ---- */}
       {clients.length > 0 && (
         <div className="mb-8 grid gap-6 lg:grid-cols-5">
@@ -228,12 +289,12 @@ export function DashboardPage() {
                 Action Items
               </h2>
               <span className="text-[11px] text-gray-400">
-                Sorted by urgency (who needs you first)
+                Sorted by urgency · filter: {DASHBOARD_FILTERS.find(f => f.id === workFilter)?.label}
               </span>
             </div>
 
-            {/* Top 3 across all statuses — true D.5 "open BookDrop, see who first" */}
-            {clientsByUrgency.length > 0 && (
+            {/* Top 3 across filtered set */}
+            {filteredByQueue.length > 0 && (
               <ActionCard
                 icon={Zap}
                 iconColor="text-primary"
@@ -242,11 +303,16 @@ export function DashboardPage() {
                 description="Ranked from current-period docs, history when available, and low-confidence review items. Not a judgment score — an action order."
               >
                 <div className="mt-3 space-y-2">
-                  {clientsByUrgency.slice(0, 3).map(c => (
+                  {filteredByQueue.slice(0, 3).map(c => (
                     <ActionClientRow key={c.id} client={c} urgency={c.urgency} />
                   ))}
                 </div>
               </ActionCard>
+            )}
+            {filteredByQueue.length === 0 && (
+              <div className="rounded-xl border border-gray-200 bg-white p-6 text-center text-sm text-gray-500">
+                No clients match this filter for {period.month}/{period.year}.
+              </div>
             )}
 
             {/* Missing docs - needs reminders */}
@@ -392,7 +458,7 @@ export function DashboardPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-50">
-                  {clientsByUrgency.map(client => (
+                  {filteredByQueue.map(client => (
                     <ClientRow key={client.id} client={client} urgency={client.urgency} />
                   ))}
                 </tbody>

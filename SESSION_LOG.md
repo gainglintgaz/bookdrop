@@ -75,4 +75,6 @@ Append-only. Newest entries at bottom.
 - Design: `BOOKDROP_PHASE_0_2_DESIGN.md` (audit + FinKeel source_kind borrow)
 - Phase 0: stub workflows not runnable
 - Phase 1: migration 009 **applied live** via `supabase db query --linked`; document-lines insert
-- Phase 2: migration 010 RPCs applied; PortalConfirmPanel; portal-confirm.ts; 116 tests
+- Phase 2: migration 010 RPCs applied; PortalConfirmPanel; portal-confirm.ts
+- Confirm proof strip: confirm-proof.ts + ClientConfirmProofStrip (ed595f7)
+- Phase 3: work-queue filters + docs work tabs; 126 tests

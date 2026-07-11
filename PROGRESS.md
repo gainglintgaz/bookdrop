@@ -20,6 +20,8 @@ Thin portal + close-PREP; FinKeel remains flagship. Not competing with TaxDome /
 | **Phase 0** | Workflow honesty | ✅ | Stub = Preview only (not runnable) |
 | **Phase 1** | Line table + write path | ✅ | Migration **009 applied** on BookDrop (`mvvadmlivrpyawmlaqye`); lines insert on upload |
 | **Phase 2** | Portal confirm UX | ✅ | RPCs 010 applied; `PortalConfirmPanel` + audit fingerprint; demo localStorage path |
+| **Confirm proof** | Bookkeeper strip | ✅ | `ClientConfirmProofStrip` from `portal_line_events` |
+| **Phase 3** | Judgment hub | ✅ | Dashboard work-queue filters + Documents tabs (docs/exceptions/confirms/package) |
 
 ## Mode
 - Local `.env`: Supabase URL/anon present; **`VITE_MODE` unset → defaults to `demo`** (`src/lib/mode.ts`)

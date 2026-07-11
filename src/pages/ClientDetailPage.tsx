@@ -19,6 +19,7 @@ import { generateUploadDeadlineICS, getNextDeadline } from '@/lib/calendar'
 import { exportMonthCSV, copyTeamsSummary } from '@/lib/export-csv'
 import { runCompletenessChecks } from '@/lib/completeness-check'
 import { evaluatePackageDraft } from '@/lib/package-draft'
+import { DOCS_WORK_TABS, docsTabHasWork, type DocsWorkTab } from '@/lib/work-queue'
 import type { ReconciliationResult } from '@/lib/reconciliation'
 import { useAccountType } from '@/hooks/useAccountType'
 import type { WorkflowResult } from '@/lib/workflow-engine'
@@ -447,6 +448,9 @@ export function ClientDetailPage() {
             setEngagementLetters(updated)
           }}
           setUploadingLetter={setUploadingLetter}
+          period={period}
+          packageDraft={packageDraft}
+          onDownloadPackage={handleDownloadPackage}
         />
       )}
 
@@ -586,6 +590,9 @@ function DocumentsTab({
   bookkeeperId,
   onLetterUploaded,
   setUploadingLetter,
+  period,
+  packageDraft,
+  onDownloadPackage,
 }: {
   requirements: RequirementWithUploads[]
   client: Client
@@ -598,7 +605,12 @@ function DocumentsTab({
   bookkeeperId: string | null
   onLetterUploaded: () => Promise<void>
   setUploadingLetter: (v: boolean) => void
+  period: { year: number; month: number }
+  packageDraft: ReturnType<typeof evaluatePackageDraft>
+  onDownloadPackage: () => void
 }) {
+  const [workTab, setWorkTab] = useState<DocsWorkTab>('docs')
+
   if (requirements.length === 0) {
     return <p className="py-8 text-center text-sm text-gray-400">No document requirements configured.</p>
   }
@@ -622,6 +634,30 @@ function DocumentsTab({
 
   return (
     <div className="space-y-3">
+      {/* Phase 3 — work sections (user switches freely) */}
+      <div className="flex flex-wrap gap-2 border-b border-gray-100 pb-3">
+        {DOCS_WORK_TABS.map(t => {
+          const hasWork = docsTabHasWork(t.id, requirements, period)
+          return (
+            <button
+              key={t.id}
+              type="button"
+              onClick={() => setWorkTab(t.id)}
+              className={cn(
+                'rounded-full px-3 py-1.5 text-xs font-medium border transition-colors',
+                workTab === t.id
+                  ? 'border-primary bg-primary text-white'
+                  : 'border-gray-200 bg-white text-gray-700 hover:border-primary/40',
+                !hasWork && workTab !== t.id && 'opacity-60',
+              )}
+            >
+              {t.label}
+            </button>
+          )
+        })}
+      </div>
+
+      {(workTab === 'docs' || workTab === 'confirms' || workTab === 'exceptions') && (
       <Suspense fallback={null}>
         <ClientConfirmProofStrip
           clientId={client.id}
@@ -629,7 +665,44 @@ function DocumentsTab({
           uploads={allPeriodUploads}
         />
       </Suspense>
-      {categorizedUploads.length > 0 && (
+      )}
+
+      {workTab === 'package' && (
+        <div
+          className={cn(
+            'rounded-lg border px-4 py-3 text-sm',
+            packageDraft.status === 'ready_for_review'
+              ? 'border-emerald-200 bg-emerald-50 text-emerald-950'
+              : packageDraft.status === 'incomplete'
+                ? 'border-amber-200 bg-amber-50 text-amber-950'
+                : 'border-gray-200 bg-white text-gray-700',
+          )}
+        >
+          <p className="font-semibold">
+            {packageDraft.status === 'ready_for_review'
+              ? 'Package ready for review'
+              : packageDraft.status === 'incomplete'
+                ? 'Package not ready'
+                : 'No package yet'}
+          </p>
+          <p className="mt-0.5 text-xs opacity-90">{packageDraft.label}</p>
+          <p className="mt-1 text-xs opacity-80">
+            Completeness {packageDraft.completeness.score}/100 · {packageDraft.uploadCount} file
+            {packageDraft.uploadCount === 1 ? '' : 's'}
+          </p>
+          {packageDraft.canDownloadPackage && (
+            <button
+              type="button"
+              onClick={onDownloadPackage}
+              className="mt-3 rounded-md bg-emerald-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-800"
+            >
+              Download package HTML
+            </button>
+          )}
+        </div>
+      )}
+
+      {(workTab === 'docs' || workTab === 'exceptions') && categorizedUploads.length > 0 && (
         <div
           className={cn(
             'rounded-lg border px-4 py-3 text-sm',
@@ -660,7 +733,7 @@ function DocumentsTab({
           </div>
         </div>
       )}
-      {lowConfidenceTotal > 0 && (
+      {(workTab === 'exceptions' || (workTab === 'docs' && lowConfidenceTotal > 0)) && lowConfidenceTotal > 0 && (
         <Suspense fallback={null}>
           <ExceptionsQueue
             requirements={requirements}
@@ -669,7 +742,12 @@ function DocumentsTab({
           />
         </Suspense>
       )}
-      {requirements.map(req => {
+      {workTab === 'exceptions' && lowConfidenceTotal === 0 && (
+        <p className="rounded-lg border border-gray-200 bg-white px-4 py-6 text-center text-sm text-gray-500">
+          No open low-confidence exceptions for this period. Upload bank/CC statements to generate line evidence.
+        </p>
+      )}
+      {workTab === 'docs' && requirements.map(req => {
         const hasUpload = req.uploads.length > 0
         const latest = req.uploads[req.uploads.length - 1]
         const lowConf = latest?.categorization_summary?.lowConfidence ?? 0
@@ -724,8 +802,8 @@ function DocumentsTab({
         )
       })}
 
-      {/* Private notes */}
-      {client.notes_private && (
+      {/* Private notes — docs tab only */}
+      {workTab === 'docs' && client.notes_private && (
         <div className="mt-6">
           <h3 className="mb-2 text-sm font-semibold text-gray-700">Private Notes</h3>
           <div className="rounded-lg border border-gray-200 bg-white p-4 text-sm text-gray-600">
@@ -734,7 +812,8 @@ function DocumentsTab({
         </div>
       )}
 
-      {/* Engagement Letters / E-Signatures */}
+      {/* Engagement Letters / E-Signatures — docs tab */}
+      {workTab === 'docs' && (
       <div className="mt-6 border-t border-gray-200 pt-6">
         <div className="mb-3 flex items-center justify-between">
           <h3 className="flex items-center gap-2 text-sm font-semibold text-gray-900">
@@ -808,6 +887,7 @@ function DocumentsTab({
           </div>
         </div>
       </div>
+      )}
     </div>
   )
 }
