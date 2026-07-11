@@ -222,7 +222,7 @@ export const WORKFLOWS: WorkflowDef[] = [
     unlocksAt: 1,
     unlockHint: 'Better with more history. Works with one month of data.',
     buildEffortDays: 3,
-    status: 'planned',
+    status: 'live',
   },
 ]
 

@@ -40,6 +40,10 @@ const ExpensePolicyPanel = lazy(() => import('@/components/practitioner/ExpenseP
 const ReceiptScannerPanel = lazy(() => import('@/components/practitioner/ReceiptScannerPanel').then(m => ({ default: m.ReceiptScannerPanel })))
 const ActivityTimeline = lazy(() => import('@/components/practitioner/ActivityTimeline').then(m => ({ default: m.ActivityTimeline })))
 const MessagePanel = lazy(() => import('@/components/shared/MessagePanel').then(m => ({ default: m.MessagePanel })))
+const WorkflowLibraryPanel = lazy(() => import('@/components/practitioner/WorkflowLibraryPanel').then(m => ({ default: m.WorkflowLibraryPanel })))
+import { runWorkflow } from '@/lib/workflows/dispatcher'
+import { downloadArtifact } from '@/lib/workflows/executor-types'
+import type { WorkflowDef } from '@/lib/workflows/registry'
 import { checkAndFireTrigger, TRIGGER_FIRST_ZIP, TRIGGER_FIRST_REMINDER } from '@/lib/engagement-triggers'
 import { fetchEngagementLetters, uploadEngagementLetter } from '@/lib/db'
 import type { EngagementLetterWithSignature } from '@/types'
@@ -54,11 +58,12 @@ import {
 
 const PORTAL_BASE = `${window.location.origin}/upload/`
 
-type TabId = 'documents' | 'analysis' | 'activity' | 'export'
+type TabId = 'documents' | 'analysis' | 'workflows' | 'activity' | 'export'
 
 const TABS: { id: TabId; label: string; icon: typeof FileText }[] = [
   { id: 'documents', label: 'Documents', icon: FileText },
   { id: 'analysis', label: 'Analysis', icon: BarChart3 },
+  { id: 'workflows', label: 'Workflows', icon: Zap },
   { id: 'activity', label: 'Activity', icon: History },
   { id: 'export', label: 'Export', icon: FolderDown },
 ]
@@ -85,7 +90,7 @@ export function ClientDetailPage() {
   const [auditReport, setAuditReport] = useState<AuditReport | null>(null)
   const [trendReport, setTrendReport] = useState<TrendReport | null>(null)
   const [policyReport, setPolicyReport] = useState<PolicyReport | null>(null)
-  const initialTab = (['documents', 'analysis', 'activity', 'export'] as TabId[]).includes(searchParams.get('tab') as TabId)
+  const initialTab = (['documents', 'analysis', 'workflows', 'activity', 'export'] as TabId[]).includes(searchParams.get('tab') as TabId)
     ? (searchParams.get('tab') as TabId)
     : 'documents'
   const [activeTab, setActiveTab] = useState<TabId>(initialTab)
@@ -425,6 +430,26 @@ export function ClientDetailPage() {
           policyReport={policyReport}
           workflowResult={workflowResult}
           onSetWorkflowResult={setWorkflowResult}
+        />
+        </Suspense>
+      )}
+
+      {activeTab === 'workflows' && (
+        <Suspense fallback={<div className="py-12 text-center"><LoadingSpinner size="lg" /></div>}>
+        <WorkflowLibraryPanel
+          onRunWorkflow={(wf: WorkflowDef) => {
+            const result = runWorkflow(wf.id, {
+              client,
+              requirements,
+              period,
+              recentReminders: reminderLog,
+            })
+            if (result.ok && result.artifact) {
+              downloadArtifact(result.artifact)
+            }
+            setNudge(result.summary)
+            setTimeout(() => setNudge(null), 5000)
+          }}
         />
         </Suspense>
       )}
