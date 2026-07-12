@@ -24,3 +24,6 @@ POWERSHELL_BOOKDROP_OVERNIGHT.txt
 secrets.json
 secrets.yaml
 secrets.toml
+
+# supabase CLI temp
+supabase/.temp/
