@@ -112,6 +112,7 @@ describe('P2 prep agent', () => {
         }],
       },
     })
+    expect(result.agentVersion).toMatch(/^prep-agent-v1/)
     expect(result.agentVersion).toBe(PREP_AGENT_VERSION)
     expect(result.humanGate).toBe('required')
     expect(result.ok).toBe(true)
