@@ -14,7 +14,7 @@ import type { WorkflowPlaybook } from './workflows/playbooks'
 import type { WorkflowExecuteContext } from './workflows/execute'
 import { PLAYBOOK_ENGINE_VERSION } from './workflows/playbooks'
 
-export const PREP_AGENT_VERSION = 'prep-agent-v1'
+export const PREP_AGENT_VERSION = 'prep-agent-v1.1'
 
 export interface PrepAgentJob {
   bookkeeperId: string

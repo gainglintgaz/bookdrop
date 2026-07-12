@@ -11,6 +11,10 @@
     {
       "path": "/api/cron/engagement-emails",
       "schedule": "0 10 * * *"
+    },
+    {
+      "path": "/api/cron/close-prep",
+      "schedule": "0 12 * * *"
     }
   ],
   "headers": [
