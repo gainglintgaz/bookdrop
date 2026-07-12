@@ -30,7 +30,6 @@ import { fetchClientUploadHistory, fetchRequirements } from '@/lib/db'
 import {
   computeStageStatuses,
   isPeriodDeskStage,
-  suggestDefaultStage,
   type PeriodDeskStage,
 } from '@/lib/period-desk'
 import { PeriodDeskNav } from '@/components/practitioner/PeriodDeskNav'
@@ -67,7 +66,7 @@ import type { StatementSummary } from '@/lib/parse-bank-statement'
 import {
   ArrowLeft, FileText, Download, Copy, CheckCircle, Clock, Send, Archive,
   Pencil, Loader2, Calendar, Table, MessageSquare, ShieldCheck, AlertTriangle,
-  XCircle, Zap, Package, BarChart3, History, FolderDown, FileBarChart,
+  XCircle, Zap, Package, BarChart3, FileBarChart,
   Brain, TrendingUp, Search, BookOpen, GitCompare, ClipboardCheck,
   CalendarDays, Camera, FileSignature,
 } from 'lucide-react'
