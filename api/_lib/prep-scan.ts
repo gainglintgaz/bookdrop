@@ -7,7 +7,7 @@ import {
   actionablePrepCandidates,
   type PrepUploadSignal,
   type PrepCandidate,
-} from '../../src/lib/prep-candidates'
+} from '../../src/lib/prep-candidates.js'
 
 export interface PrepScanResult {
   period: { year: number; month: number }
