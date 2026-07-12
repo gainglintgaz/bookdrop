@@ -25,6 +25,11 @@ Thin portal + close-PREP; FinKeel remains flagship. Not competing with TaxDome /
 | **Phase 4** | Editable playbooks | ✅ | Allowlist steps, CRUD, run audit, Analysis UI; migration **011** applied |
 | **Phase 5** | Earned intelligence | ✅ | Per-client memory on upload; reminder personalization locked &lt; Loop 2; k≥5 cohort gate |
 | **Phase 5.1** | Multi-period cycles | ✅ | 12-mo lookback snapshots; Riverside demo Loop 2+; design doc `BOOKDROP_PHASE_5_1_DESIGN.md` |
+| **AI P1** | Period Desk | ✅ | Stage chips replace tab scavenger hunt |
+| **AI P2** | Prep agent | ✅ | Allowlisted run + cron endpoint (dry-run honest) |
+| **AI P3** | Receipt→lines | ✅ | Same line spine as statements |
+| **AI P4** | Firm k≥5 | ✅ | Cross-firm category suggestions gated |
+| **AI P5** | Export approve | ✅ | Human checkbox before QBO/Xero CSV |
 
 ## Mode
 - Local `.env`: Supabase URL/anon present; **`VITE_MODE` unset → defaults to `demo`** (`src/lib/mode.ts`)

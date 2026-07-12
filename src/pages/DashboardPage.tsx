@@ -379,7 +379,7 @@ export function DashboardPage() {
                     <div key={c.id} className="flex items-center justify-between gap-2">
                       <div className="min-w-0">
                         <Link
-                          to={`/clients/${c.id}`}
+                          to={`/clients/${c.id}?desk=collect`}
                           className="text-sm font-medium text-gray-700 hover:text-primary"
                         >
                           {c.business_name}
@@ -389,7 +389,7 @@ export function DashboardPage() {
                         )}
                       </div>
                       <Link
-                        to={`/clients/${c.id}`}
+                        to={`/clients/${c.id}?desk=collect`}
                         className="shrink-0 text-xs font-medium text-primary hover:underline"
                       >
                         Review
@@ -578,7 +578,7 @@ function ActionClientRow({
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
           <Link
-            to={`/clients/${client.id}`}
+            to={`/clients/${client.id}?desk=collect`}
             className="text-sm font-medium text-gray-700 hover:text-primary"
           >
             {client.business_name}
@@ -687,7 +687,7 @@ function ClientRow({
   return (
     <tr
       className="cursor-pointer transition-colors hover:bg-gray-50/80 group"
-      onClick={() => navigate(`/clients/${client.id}`)}
+      onClick={() => navigate(`/clients/${client.id}?desk=collect`)}
     >
       <td className="px-4 py-3.5">
         <div className="flex items-center gap-2">
@@ -745,7 +745,7 @@ function ClientRow({
             <Copy className="h-4 w-4" />
           </button>
           <Link
-            to={`/clients/${client.id}`}
+            to={`/clients/${client.id}?desk=collect`}
             onClick={e => e.stopPropagation()}
             className="rounded-md p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors"
             title="View details"
