@@ -27,6 +27,13 @@ import {
 } from '@/lib/client-cycles'
 import { getLearningStats } from '@/lib/category-memory'
 import { fetchClientUploadHistory, fetchRequirements } from '@/lib/db'
+import {
+  computeStageStatuses,
+  isPeriodDeskStage,
+  suggestDefaultStage,
+  type PeriodDeskStage,
+} from '@/lib/period-desk'
+import { PeriodDeskNav } from '@/components/practitioner/PeriodDeskNav'
 import type { ReconciliationResult } from '@/lib/reconciliation'
 import { useAccountType } from '@/hooks/useAccountType'
 import type { WorkflowResult } from '@/lib/workflow-engine'
@@ -67,24 +74,31 @@ import {
 
 const PORTAL_BASE = `${window.location.origin}/upload/`
 
-type TabId = 'documents' | 'analysis' | 'activity' | 'export'
-
-const TABS: { id: TabId; label: string; icon: typeof FileText }[] = [
-  { id: 'documents', label: 'Documents', icon: FileText },
-  { id: 'analysis', label: 'Analysis', icon: BarChart3 },
-  { id: 'activity', label: 'Activity', icon: History },
-  { id: 'export', label: 'Export', icon: FolderDown },
-]
+function deskFromSearchParams(params: URLSearchParams): PeriodDeskStage {
+  const desk = params.get('desk')
+  if (isPeriodDeskStage(desk)) return desk
+  // Legacy tab= deep links
+  const tab = params.get('tab')
+  if (tab === 'analysis') return 'power'
+  if (tab === 'export') return 'package'
+  if (tab === 'activity') return 'history'
+  return 'collect'
+}
 
 export function ClientDetailPage() {
   const { clientId } = useParams<{ clientId: string }>()
-  const [searchParams] = useSearchParams()
+  const [searchParams, setSearchParams] = useSearchParams()
   const [client, setClient] = useState<Client | null>(null)
   const [requirements, setRequirements] = useState<RequirementWithUploads[]>([])
   const [reminderLog, setReminderLog] = useState<ReminderLog[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [period, setPeriod] = useState(getCurrentPeriod)
+  const [period, setPeriod] = useState(() => {
+    const y = Number(searchParams.get('year'))
+    const m = Number(searchParams.get('month'))
+    if (y >= 2000 && m >= 1 && m <= 12) return { year: y, month: m }
+    return getCurrentPeriod()
+  })
   const [copied, setCopied] = useState(false)
   const [zipping, setZipping] = useState(false)
   const [sendingReminder, setSendingReminder] = useState(false)
@@ -98,10 +112,9 @@ export function ClientDetailPage() {
   const [auditReport, setAuditReport] = useState<AuditReport | null>(null)
   const [trendReport, setTrendReport] = useState<TrendReport | null>(null)
   const [policyReport, setPolicyReport] = useState<PolicyReport | null>(null)
-  const initialTab = (['documents', 'analysis', 'activity', 'export'] as TabId[]).includes(searchParams.get('tab') as TabId)
-    ? (searchParams.get('tab') as TabId)
-    : 'documents'
-  const [activeTab, setActiveTab] = useState<TabId>(initialTab)
+  const [deskStage, setDeskStage] = useState<PeriodDeskStage>(() => deskFromSearchParams(searchParams))
+  const [openExceptionCount, setOpenExceptionCount] = useState(0)
+  const [openConfirmCount, setOpenConfirmCount] = useState(0)
   const [workflowResult, setWorkflowResult] = useState<WorkflowResult | null>(null)
   const [showMessages, setShowMessages] = useState(false)
   const [nudge, setNudge] = useState<string | null>(null)
@@ -269,6 +282,25 @@ export function ClientDetailPage() {
     },
   ]
   const cycleSummary = summarizeClientCycles(cycleSnapshots ?? fallbackSnapshots)
+
+  const packageDraftForDesk = packageDraft
+  const deskStatuses = computeStageStatuses({
+    requirements,
+    packageDraft: packageDraftForDesk,
+    openExceptionCount,
+    openConfirmCount,
+    reconResult,
+    hasParsedStatements: parsedStatements.length > 0,
+  })
+
+  function selectDeskStage(stage: PeriodDeskStage) {
+    setDeskStage(stage)
+    const next = new URLSearchParams(searchParams)
+    next.set('desk', stage)
+    next.set('year', String(period.year))
+    next.set('month', String(period.month))
+    setSearchParams(next, { replace: true })
+  }
 
   const handleZipDownload = async () => {
     setZipping(true)
@@ -501,10 +533,10 @@ export function ClientDetailPage() {
             )}
             <button
               type="button"
-              onClick={() => setActiveTab('export')}
+              onClick={() => selectDeskStage('package')}
               className="text-xs font-medium text-emerald-800 underline-offset-2 hover:underline"
             >
-              Export tab
+              Open package stage
             </button>
           </div>
         </div>
@@ -516,34 +548,17 @@ export function ClientDetailPage() {
         </div>
       )}
 
-      {/* ─── TAB BAR ────────────────────────────────────────────────────────────── */}
-      <div className="mb-6 border-b border-gray-200">
-        <nav className="-mb-px flex gap-1 sm:gap-6">
-          {TABS.map(tab => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              title={tab.label}
-              aria-label={tab.label}
-              role="tab"
-              aria-selected={activeTab === tab.id}
-              className={cn(
-                'flex items-center gap-2 border-b-2 px-2 pb-3 text-sm font-medium transition-colors sm:px-1',
-                activeTab === tab.id
-                  ? 'border-primary text-primary'
-                  : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700',
-              )}
-            >
-              <tab.icon className="h-4 w-4" />
-              <span className="hidden sm:inline">{tab.label}</span>
-            </button>
-          ))}
-        </nav>
+      {/* ─── PERIOD DESK (P1) — single close-prep home ─────────────────────────── */}
+      <div className="mb-6 rounded-lg border border-gray-200 bg-white p-4">
+        <PeriodDeskNav
+          active={deskStage}
+          statuses={deskStatuses}
+          onSelect={selectDeskStage}
+        />
       </div>
 
-      {/* ─── TAB CONTENT ────────────────────────────────────────────────────────── */}
-
-      {activeTab === 'documents' && (
+      {/* Stage content */}
+      {(deskStage === 'collect' || deskStage === 'confirm' || deskStage === 'exceptions') && (
         <DocumentsTab
           requirements={requirements}
           client={client}
@@ -563,79 +578,77 @@ export function ClientDetailPage() {
           period={period}
           packageDraft={packageDraft}
           onDownloadPackage={handleDownloadPackage}
+          forcedWorkTab={
+            deskStage === 'confirm'
+              ? 'confirms'
+              : deskStage === 'exceptions'
+                ? 'exceptions'
+                : 'docs'
+          }
+          onExceptionCount={setOpenExceptionCount}
+          onConfirmCount={setOpenConfirmCount}
         />
       )}
 
-      {activeTab === 'analysis' && (
+      {deskStage === 'recon' && (
         <Suspense fallback={<div className="py-12 text-center"><LoadingSpinner size="lg" /></div>}>
-        <AnalysisTab
-          requirements={requirements}
-          client={client}
-          bookkeeperId={bookkeeperId ?? client.bookkeeper_id ?? 'bk-demo-001'}
-          period={period}
-          parsedStatements={parsedStatements}
-          reconResult={reconResult}
-          onSetReconResult={setReconResult}
-          onStatementsParsed={async (stmts) => {
-            setParsedStatements(stmts)
-            // Auto-run ALL intelligence engines when statements are parsed
-            if (stmts.length > 0) {
-              const allTxns = stmts.flatMap(s => s.transactions).map(t => ({
-                date: t.date,
-                description: t.description,
-                amount: Math.abs(t.amount),
-                type: (t.amount >= 0 ? 'credit' : 'debit') as 'credit' | 'debit',
-                category: t.category,
-              }))
-              // Dynamic imports — keeps these libs out of the main chunk
-              const [insightsMod, catMod, cfMod, auditMod, trendMod, policyMod] = await Promise.all([
-                import('@/lib/insights'),
-                import('@/lib/categorization-engine'),
-                import('@/lib/cash-flow-forecast'),
-                import('@/lib/duplicate-detector'),
-                import('@/lib/trend-analysis'),
-                import('@/lib/expense-policy'),
-              ])
-              setInsights(insightsMod.generateInsights(stmts, period.year, period.month))
-              setCategorizationReport(catMod.categorizeTransactions(allTxns))
-              setCashForecast(cfMod.generateCashFlowForecast(stmts, period.year, period.month))
-              setAuditReport(auditMod.runAuditChecks(allTxns))
-              setTrendReport(trendMod.analyzeTrends(stmts))
-              setPolicyReport(policyMod.checkExpensePolicy(allTxns))
-            }
-          }}
-          onRunReconciliation={async () => {
-            const reconMod = await import('@/lib/reconciliation')
-            if (parsedStatements.length > 0) {
-              const result = reconMod.reconcileFromParsedStatements(parsedStatements, requirements)
-              setReconResult(result ?? reconMod.getDemoReconciliation())
-            } else {
-              setReconResult(reconMod.getDemoReconciliation())
-            }
-          }}
-          insights={insights}
-          categorizationReport={categorizationReport}
-          cashForecast={cashForecast}
-          auditReport={auditReport}
-          trendReport={trendReport}
-          policyReport={policyReport}
-          workflowResult={workflowResult}
-          onSetWorkflowResult={setWorkflowResult}
-        />
+          <AnalysisTab
+            requirements={requirements}
+            client={client}
+            bookkeeperId={bookkeeperId ?? client.bookkeeper_id ?? 'bk-demo-001'}
+            period={period}
+            parsedStatements={parsedStatements}
+            reconResult={reconResult}
+            onSetReconResult={setReconResult}
+            onStatementsParsed={async (stmts) => {
+              setParsedStatements(stmts)
+              if (stmts.length > 0) {
+                const allTxns = stmts.flatMap(s => s.transactions).map(t => ({
+                  date: t.date,
+                  description: t.description,
+                  amount: Math.abs(t.amount),
+                  type: (t.amount >= 0 ? 'credit' : 'debit') as 'credit' | 'debit',
+                  category: t.category,
+                }))
+                const [insightsMod, catMod, cfMod, auditMod, trendMod, policyMod] = await Promise.all([
+                  import('@/lib/insights'),
+                  import('@/lib/categorization-engine'),
+                  import('@/lib/cash-flow-forecast'),
+                  import('@/lib/duplicate-detector'),
+                  import('@/lib/trend-analysis'),
+                  import('@/lib/expense-policy'),
+                ])
+                setInsights(insightsMod.generateInsights(stmts, period.year, period.month))
+                setCategorizationReport(catMod.categorizeTransactions(allTxns))
+                setCashForecast(cfMod.generateCashFlowForecast(stmts, period.year, period.month))
+                setAuditReport(auditMod.runAuditChecks(allTxns))
+                setTrendReport(trendMod.analyzeTrends(stmts))
+                setPolicyReport(policyMod.checkExpensePolicy(allTxns))
+              }
+            }}
+            onRunReconciliation={async () => {
+              const reconMod = await import('@/lib/reconciliation')
+              if (parsedStatements.length > 0) {
+                const result = reconMod.reconcileFromParsedStatements(parsedStatements, requirements)
+                setReconResult(result ?? reconMod.getDemoReconciliation())
+              } else {
+                setReconResult(reconMod.getDemoReconciliation())
+              }
+            }}
+            insights={insights}
+            categorizationReport={categorizationReport}
+            cashForecast={cashForecast}
+            auditReport={auditReport}
+            trendReport={trendReport}
+            policyReport={policyReport}
+            workflowResult={workflowResult}
+            onSetWorkflowResult={setWorkflowResult}
+            focusSection="reconcile"
+          />
         </Suspense>
       )}
 
-      {activeTab === 'activity' && (
-        <Suspense fallback={<div className="py-12 text-center"><LoadingSpinner size="lg" /></div>}>
-        <ActivityTimeline
-          requirements={requirements}
-          reminderLog={reminderLog}
-          clientName={client.business_name}
-        />
-        </Suspense>
-      )}
-
-      {activeTab === 'export' && (
+      {deskStage === 'package' && (
         <ExportTab
           client={client}
           requirements={requirements}
@@ -656,6 +669,73 @@ export function ClientDetailPage() {
             setTimeout(() => setTeamsCopied(false), 2000)
           }}
         />
+      )}
+
+      {deskStage === 'history' && (
+        <Suspense fallback={<div className="py-12 text-center"><LoadingSpinner size="lg" /></div>}>
+          <ActivityTimeline
+            requirements={requirements}
+            reminderLog={reminderLog}
+            clientName={client.business_name}
+          />
+        </Suspense>
+      )}
+
+      {deskStage === 'power' && (
+        <Suspense fallback={<div className="py-12 text-center"><LoadingSpinner size="lg" /></div>}>
+          <AnalysisTab
+            requirements={requirements}
+            client={client}
+            bookkeeperId={bookkeeperId ?? client.bookkeeper_id ?? 'bk-demo-001'}
+            period={period}
+            parsedStatements={parsedStatements}
+            reconResult={reconResult}
+            onSetReconResult={setReconResult}
+            onStatementsParsed={async (stmts) => {
+              setParsedStatements(stmts)
+              if (stmts.length > 0) {
+                const allTxns = stmts.flatMap(s => s.transactions).map(t => ({
+                  date: t.date,
+                  description: t.description,
+                  amount: Math.abs(t.amount),
+                  type: (t.amount >= 0 ? 'credit' : 'debit') as 'credit' | 'debit',
+                  category: t.category,
+                }))
+                const [insightsMod, catMod, cfMod, auditMod, trendMod, policyMod] = await Promise.all([
+                  import('@/lib/insights'),
+                  import('@/lib/categorization-engine'),
+                  import('@/lib/cash-flow-forecast'),
+                  import('@/lib/duplicate-detector'),
+                  import('@/lib/trend-analysis'),
+                  import('@/lib/expense-policy'),
+                ])
+                setInsights(insightsMod.generateInsights(stmts, period.year, period.month))
+                setCategorizationReport(catMod.categorizeTransactions(allTxns))
+                setCashForecast(cfMod.generateCashFlowForecast(stmts, period.year, period.month))
+                setAuditReport(auditMod.runAuditChecks(allTxns))
+                setTrendReport(trendMod.analyzeTrends(stmts))
+                setPolicyReport(policyMod.checkExpensePolicy(allTxns))
+              }
+            }}
+            onRunReconciliation={async () => {
+              const reconMod = await import('@/lib/reconciliation')
+              if (parsedStatements.length > 0) {
+                const result = reconMod.reconcileFromParsedStatements(parsedStatements, requirements)
+                setReconResult(result ?? reconMod.getDemoReconciliation())
+              } else {
+                setReconResult(reconMod.getDemoReconciliation())
+              }
+            }}
+            insights={insights}
+            categorizationReport={categorizationReport}
+            cashForecast={cashForecast}
+            auditReport={auditReport}
+            trendReport={trendReport}
+            policyReport={policyReport}
+            workflowResult={workflowResult}
+            onSetWorkflowResult={setWorkflowResult}
+          />
+        </Suspense>
       )}
 
       {/* Footer info */}
@@ -706,6 +786,9 @@ function DocumentsTab({
   period,
   packageDraft,
   onDownloadPackage,
+  forcedWorkTab,
+  onExceptionCount,
+  onConfirmCount,
 }: {
   requirements: RequirementWithUploads[]
   client: Client
@@ -721,8 +804,15 @@ function DocumentsTab({
   period: { year: number; month: number }
   packageDraft: ReturnType<typeof evaluatePackageDraft>
   onDownloadPackage: () => void
+  forcedWorkTab?: DocsWorkTab
+  onExceptionCount?: (n: number) => void
+  onConfirmCount?: (n: number) => void
 }) {
-  const [workTab, setWorkTab] = useState<DocsWorkTab>('docs')
+  const [workTab, setWorkTab] = useState<DocsWorkTab>(forcedWorkTab ?? 'docs')
+
+  useEffect(() => {
+    if (forcedWorkTab) setWorkTab(forcedWorkTab)
+  }, [forcedWorkTab])
 
   if (requirements.length === 0) {
     return <p className="py-8 text-center text-sm text-gray-400">No document requirements configured.</p>
@@ -742,6 +832,15 @@ function DocumentsTab({
     (sum, { upload }) => sum + (upload.categorization_summary?.flagsCount ?? 0),
     0,
   )
+
+  useEffect(() => {
+    onExceptionCount?.(lowConfidenceTotal + flagsTotal)
+  }, [lowConfidenceTotal, flagsTotal, onExceptionCount])
+
+  useEffect(() => {
+    // Confirm open count: treat any low-confidence summary lines as needing confirm progress signal
+    onConfirmCount?.(lowConfidenceTotal > 0 ? lowConfidenceTotal : 0)
+  }, [lowConfidenceTotal, onConfirmCount])
 
   const allPeriodUploads = requirements.flatMap(r => r.uploads)
 
@@ -1041,6 +1140,7 @@ function AnalysisTab({
   policyReport,
   workflowResult,
   onSetWorkflowResult,
+  focusSection,
 }: {
   requirements: RequirementWithUploads[]
   client: Client
@@ -1059,8 +1159,12 @@ function AnalysisTab({
   policyReport: PolicyReport | null
   workflowResult: WorkflowResult | null
   onSetWorkflowResult: (r: WorkflowResult | null) => void
+  focusSection?: AnalysisSection
 }) {
-  const [section, setSection] = useState<AnalysisSection>('parse')
+  const [section, setSection] = useState<AnalysisSection>(focusSection ?? 'parse')
+  useEffect(() => {
+    if (focusSection) setSection(focusSection)
+  }, [focusSection])
   const [workflowError, setWorkflowError] = useState<string | null>(null)
   const [workflowRunning, setWorkflowRunning] = useState(false)
   const hasParsed = parsedStatements.length > 0
@@ -1193,6 +1297,44 @@ function AnalysisTab({
             onError={setWorkflowError}
           />
         </Suspense>
+        <button
+          type="button"
+          className="mt-3 text-xs font-medium text-primary hover:underline"
+          onClick={async () => {
+            setWorkflowRunning(true)
+            setWorkflowError(null)
+            try {
+              const { runPrepAgent } = await import('@/lib/prep-agent')
+              const result = await runPrepAgent({
+                bookkeeperId,
+                clientId: client.id,
+                clientName: client.business_name,
+                period,
+                executeCtx: {
+                  clientId: client.id,
+                  clientName: client.business_name,
+                  period,
+                  statements: parsedStatements,
+                  requirements,
+                  reconResult,
+                },
+              })
+              if (!result.ok) {
+                setWorkflowError(result.message)
+                if (result.outcome.result) onSetWorkflowResult(result.outcome.result)
+              } else if (result.outcome.ok) {
+                onSetWorkflowResult(result.outcome.result)
+              }
+            } catch (err) {
+              setWorkflowError(err instanceof Error ? err.message : 'Prep agent failed')
+            } finally {
+              setWorkflowRunning(false)
+            }
+          }}
+          disabled={workflowRunning}
+        >
+          {workflowRunning ? 'Prep agent running…' : 'Run prep agent (allowlisted steps · human approve still required)'}
+        </button>
       </div>
 
       {/* Workflow Result Panel — executive summary */}
@@ -1436,6 +1578,20 @@ function ExportTab({
 }) {
   const { isSolo: isBusinessOwnerMode } = useAccountType()
   const report = packageDraft.completeness
+  const [exportApproved, setExportApproved] = useState(false)
+  const [exportMsg, setExportMsg] = useState<string | null>(null)
+
+  async function runApprovedExport(format: 'qbo_csv' | 'xero_csv' | 'journal_csv') {
+    const { approveAndExport } = await import('@/lib/export-approve')
+    const result = approveAndExport({
+      packageDraft,
+      approvedByBookkeeper: exportApproved,
+      format,
+      businessName: client.business_name,
+      statements: parsedStatements,
+    })
+    setExportMsg(result.ok ? result.message : result.error)
+  }
 
   return (
     <div className="space-y-4">
@@ -1485,6 +1641,60 @@ function ExportTab({
         </div>
       </div>
 
+      {/* P5 — Approve & export to accounting software (human gate) */}
+      <div className="rounded-lg border border-gray-200 bg-white p-5 space-y-3">
+        <h4 className="text-sm font-semibold text-gray-900">Approve & export (QBO / Xero)</h4>
+        <p className="text-xs text-gray-500">
+          Does not post to your general ledger. Download a file you import after review.
+          Requires package ready_for_review and your explicit approval.
+        </p>
+        <label className="flex items-start gap-2 text-xs text-gray-700">
+          <input
+            type="checkbox"
+            checked={exportApproved}
+            onChange={e => setExportApproved(e.target.checked)}
+            className="mt-0.5"
+          />
+          <span>
+            I reviewed this package for {formatPeriod(period.year, period.month)} and approve export
+            of parsed transactions only (no silent push to QBO/Xero).
+          </span>
+        </label>
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => void runApprovedExport('qbo_csv')}
+            className="rounded-md border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-800 hover:bg-gray-50"
+          >
+            Export QBO CSV
+          </button>
+          <button
+            type="button"
+            onClick={() => void runApprovedExport('xero_csv')}
+            className="rounded-md border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-800 hover:bg-gray-50"
+          >
+            Export Xero CSV
+          </button>
+          <button
+            type="button"
+            onClick={() => void runApprovedExport('journal_csv')}
+            className="rounded-md border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-800 hover:bg-gray-50"
+          >
+            Export journal CSV
+          </button>
+        </div>
+        {exportMsg && (
+          <p className={cn(
+            'text-xs rounded-md px-3 py-2 border',
+            exportMsg.startsWith('Export blocked') || exportMsg.includes('blocked')
+              ? 'bg-amber-50 border-amber-200 text-amber-900'
+              : 'bg-emerald-50 border-emerald-200 text-emerald-900',
+          )}>
+            {exportMsg}
+          </p>
+        )}
+      </div>
+
       {/* Client Monthly Report (insights-based) */}
       {insights && (
         <div className="rounded-lg border border-primary/20 bg-primary/5 p-5">
@@ -1492,7 +1702,7 @@ function ExportTab({
             <div>
               <h4 className="text-sm font-semibold text-gray-900">Client Monthly Report</h4>
               <p className="mt-0.5 text-xs text-gray-500">
-                Cash flow summary, spending breakdown, vendor analysis, and smart advice — branded HTML report.
+                Cash flow summary, spending breakdown, vendor analysis — branded HTML report.
               </p>
             </div>
             <button

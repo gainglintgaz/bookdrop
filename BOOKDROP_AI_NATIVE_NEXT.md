@@ -2,6 +2,7 @@
 
 > **Date:** 2026-07-12  
 > **After:** PR #16 merged (phases 0–5.1) · production redeploy  
+> **Status:** Waves P1–P5 **implemented in code** (2026-07-12 session) — see §10  
 > **Philosophy:** One app. One period workspace. AI does the prep; humans approve. Nothing fake. No Level-3 tax advice.  
 > **Not competing with:** TaxDome practice management, full Digits GL replacement, Botkeeper human BPO.
 
@@ -200,3 +201,17 @@ No free-form multi-tool LLM loop in V1 unless every tool is allowlisted and ever
 - No new LLM yet  
 
 Then Wave B design spike: storage → server parse feasibility for bank PDFs.
+
+---
+
+## 10. Implemented (2026-07-12) — P1 through P5
+
+| Wave | Delivered |
+|---|---|
+| **P1 Period Desk** | `period-desk.ts` + `PeriodDeskNav` on Client detail; stages Collect→…→Power; dashboard links `?desk=collect` |
+| **P2 Prep Agent** | `prep-agent.ts` (allowlisted playbook + humanGate always); `api/cron/close-prep.ts` (CRON_SECRET, honest dry-run); Run button on Power tools |
+| **P3 Capture** | `receipt-to-lines.ts` maps OCR → `document_line_items` drafts + client memory |
+| **P4 Firm brain** | `firm-aggregates.ts` k≥5 vendor→category suggestions (observation only) |
+| **P5 Export approve** | `export-approve.ts` + Package stage UI: checkbox gate → QBO/Xero/journal CSV |
+
+**Still founder / next:** full server-side PDF parse in cron, live Resend notifications, OAuth QBO push, cloud `VITE_MODE`.
