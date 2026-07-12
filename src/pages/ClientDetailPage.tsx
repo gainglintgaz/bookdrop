@@ -20,6 +20,8 @@ import { exportMonthCSV, copyTeamsSummary } from '@/lib/export-csv'
 import { runCompletenessChecks } from '@/lib/completeness-check'
 import { evaluatePackageDraft } from '@/lib/package-draft'
 import { DOCS_WORK_TABS, docsTabHasWork, type DocsWorkTab } from '@/lib/work-queue'
+import { getReminderPersonalizationState } from '@/lib/client-cycles'
+import { getLearningStats } from '@/lib/category-memory'
 import type { ReconciliationResult } from '@/lib/reconciliation'
 import { useAccountType } from '@/hooks/useAccountType'
 import type { WorkflowResult } from '@/lib/workflow-engine'
@@ -210,6 +212,12 @@ export function ClientDetailPage() {
     parsedStatements.length > 0 ? parsedStatements : undefined,
   )
 
+  // Phase 5 — loop gate for reminder personalization (LOCKED until 2 complete months).
+  // Only count periods we can prove complete from loaded data. Do not invent history.
+  const thisPeriodComplete =
+    requiredCount > 0 && uploadedCount >= requiredCount
+  const earnedLoopCount = thisPeriodComplete ? 1 : 0
+
   const handleZipDownload = async () => {
     setZipping(true)
     const zipName = `${client.business_name.replace(/\s+/g, '_')}_${period.year}_${String(period.month).padStart(2, '0')}.zip`
@@ -268,6 +276,34 @@ export function ClientDetailPage() {
           <MonthSelector year={period.year} month={period.month} onChange={setPeriod} />
         </div>
       </div>
+
+      {/* Phase 5 — earned intelligence honesty strip */}
+      {(() => {
+        const remGate = getReminderPersonalizationState(earnedLoopCount)
+        const learn = getLearningStats(client.id)
+        return (
+          <div className="mb-4 rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-xs text-gray-600">
+            <p className="font-semibold text-gray-800">Earned intelligence (this client)</p>
+            <ul className="mt-1.5 space-y-1">
+              <li>
+                Category memory:{' '}
+                {learn.totalCorrections > 0
+                  ? `${learn.totalCorrections} correction${learn.totalCorrections === 1 ? '' : 's'} taught for this client — applied on next portal upload`
+                  : 'No corrections yet. Fix a line in Exceptions to teach the next upload.'}
+              </li>
+              <li>
+                Reminder personalization:{' '}
+                {remGate.unlocked
+                  ? `Unlocked (${remGate.loopCount} complete months). Preferred day inference available when submission-day samples exist.`
+                  : remGate.lockedCopy}
+              </li>
+              <li className="text-gray-500">
+                Cross-firm benchmarks stay suppressed until 5+ firms contribute (privacy floor).
+              </li>
+            </ul>
+          </div>
+        )
+      })()}
 
       {/* Summary bar */}
       <div className={cn(

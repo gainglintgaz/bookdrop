@@ -85,3 +85,10 @@ Append-only. Newest entries at bottom.
 - Migration **011** applied via `supabase db query --linked` (`workflow_playbooks`, `workflow_runs` + RLS)
 - `PlaybookEditorPanel` on Client Detail → Analysis (create / reorder / soft-delete / run / recent runs)
 - 139 tests; `tsc --noEmit` clean
+
+### Ship + Phase 5 (2026-07-12)
+- Pushed `feat/bookdrop-session-20260711` → origin
+- Production deploy: https://bookkeeper-portal.vercel.app (aliased)
+- PR: https://github.com/gainglintgaz/bookdrop/pull/16
+- Phase 5: per-client category-memory on upload; client-cycles reminder lock; aggregate-gate k≥5
+- Client detail “Earned intelligence” honesty strip

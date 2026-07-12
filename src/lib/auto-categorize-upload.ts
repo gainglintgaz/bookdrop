@@ -22,6 +22,7 @@ import {
   type StatementSummary,
 } from './parse-bank-statement'
 import { categorizeTransactions } from './categorization-engine'
+import { getLearnedCategory } from './category-memory'
 import type {
   DocType,
   ParsedStatementSummary,
@@ -83,6 +84,7 @@ export interface AutoCategorizationResult {
 export async function autoCategorizeUpload(
   file: File,
   docType: DocType,
+  opts?: { clientId?: string },
 ): Promise<AutoCategorizationResult | null> {
   if (!shouldAutoCategorize(docType)) return null
   if (!isParseableFile(file.name)) return null
@@ -132,6 +134,12 @@ export async function autoCategorizeUpload(
   }))
 
   const report = categorizeTransactions(txns)
+
+  // Phase 5: apply per-client learned corrections before writing lines
+  if (opts?.clientId) {
+    applyClientCategoryMemory(report, opts.clientId)
+  }
+
   const lines = toLineDrafts(statement, report, sourceKind)
 
   return {
@@ -140,6 +148,56 @@ export async function autoCategorizeUpload(
     aggregateConfidence: deriveAggregateConfidence(report),
     lines,
   }
+}
+
+/**
+ * Override engine categories with this client's learned map.
+ * Never uses another client's corrections.
+ */
+function applyClientCategoryMemory(
+  report: {
+    transactions: Array<{
+      originalDescription: string
+      cleanedDescription: string
+      category: string
+      subcategory: string
+      confidence: 'high' | 'medium' | 'low'
+      matchedVendor: string | null
+      flags: string[]
+    }>
+    summary: {
+      totalCategorized: number
+      highConfidence: number
+      mediumConfidence: number
+      lowConfidence: number
+    }
+  },
+  clientId: string,
+): void {
+  let hi = 0
+  let med = 0
+  let lo = 0
+
+  for (const t of report.transactions) {
+    const learned = getLearnedCategory(clientId, t.originalDescription || t.cleanedDescription)
+    if (learned && learned.category) {
+      t.category = learned.category
+      t.subcategory = learned.subcategory || t.subcategory
+      // Learned from human correction → treat as high confidence for this client
+      t.confidence = learned.confidence >= 2 ? 'high' : 'medium'
+      t.matchedVendor = t.matchedVendor ?? 'client_memory'
+      if (!t.flags.includes('client_memory')) {
+        t.flags.push('client_memory')
+      }
+    }
+    if (t.confidence === 'high') hi++
+    else if (t.confidence === 'medium') med++
+    else lo++
+  }
+
+  report.summary.highConfidence = hi
+  report.summary.mediumConfidence = med
+  report.summary.lowConfidence = lo
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -251,7 +309,12 @@ function toLineDrafts(
       confidence: cat.confidence,
       matched_vendor: cat.matchedVendor,
       source_kind: sourceKind,
-      source_rule: cat.matchedVendor ? `vendor:${cat.matchedVendor}` : null,
+      source_rule:
+        cat.matchedVendor === 'client_memory'
+          ? 'client_memory'
+          : cat.matchedVendor
+            ? `vendor:${cat.matchedVendor}`
+            : null,
       engine_version: ENGINE_VERSION,
     })
   }

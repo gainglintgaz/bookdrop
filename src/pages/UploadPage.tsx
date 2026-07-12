@@ -90,7 +90,9 @@ export function UploadPage() {
       // Failures here NEVER block the upload (per ai-first-principles.md §5).
       let enriched: DocumentUpload = upload
       try {
-        const result = await autoCategorizeUpload(file, docType)
+        const result = await autoCategorizeUpload(file, docType, {
+          clientId: portalData.client.id,
+        })
         if (result) {
           const auto_categorized_at = new Date().toISOString()
           enriched = {

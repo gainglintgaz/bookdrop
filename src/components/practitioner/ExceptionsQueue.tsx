@@ -83,7 +83,7 @@ export function ExceptionsQueue({ requirements, clientId, bookkeeperId }: Props)
     setErrorId(null)
 
     try {
-      recordLocalMemory(item.description, item.originalCategory, newCategory)
+      recordLocalMemory(clientId, item.description, item.originalCategory, newCategory)
     } catch {
       /* non-blocking */
     }

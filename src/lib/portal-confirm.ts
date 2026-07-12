@@ -212,7 +212,7 @@ async function demoConfirmLine(params: {
 
   if (params.action === 'change' && before !== after) {
     try {
-      recordLocalMemory(line.description_raw, before ?? 'Uncategorized', after)
+      recordLocalMemory(line.client_id, line.description_raw, before ?? 'Uncategorized', after)
     } catch {
       /* ignore */
     }

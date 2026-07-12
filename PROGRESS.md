@@ -23,6 +23,7 @@ Thin portal + close-PREP; FinKeel remains flagship. Not competing with TaxDome /
 | **Confirm proof** | Bookkeeper strip | ✅ | `ClientConfirmProofStrip` from `portal_line_events` |
 | **Phase 3** | Judgment hub | ✅ | Dashboard work-queue filters + Documents tabs (docs/exceptions/confirms/package) |
 | **Phase 4** | Editable playbooks | ✅ | Allowlist steps, CRUD, run audit, Analysis UI; migration **011** applied |
+| **Phase 5** | Earned intelligence | ✅ | Per-client memory on upload; reminder personalization locked &lt; Loop 2; k≥5 cohort gate |
 
 ## Mode
 - Local `.env`: Supabase URL/anon present; **`VITE_MODE` unset → defaults to `demo`** (`src/lib/mode.ts`)
