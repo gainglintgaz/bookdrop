@@ -86,9 +86,18 @@ describe('reminder personalization gate', () => {
   it('counts completed cycles honestly', () => {
     expect(
       countCompletedCycles([
-        { year: 2026, month: 1, requiredDocs: 2, uploadedRequiredDocs: 2 },
-        { year: 2026, month: 2, requiredDocs: 2, uploadedRequiredDocs: 1 },
-        { year: 2026, month: 3, requiredDocs: 0, uploadedRequiredDocs: 0 },
+        {
+          year: 2026, month: 1, requiredDocs: 2, uploadedRequiredDocs: 2,
+          complete: true, completionDay: 4,
+        },
+        {
+          year: 2026, month: 2, requiredDocs: 2, uploadedRequiredDocs: 1,
+          complete: false, completionDay: null,
+        },
+        {
+          year: 2026, month: 3, requiredDocs: 0, uploadedRequiredDocs: 0,
+          complete: false, completionDay: null,
+        },
       ]),
     ).toBe(1)
   })

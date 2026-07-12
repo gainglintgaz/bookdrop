@@ -4,7 +4,12 @@
 
 import { supabase } from '@/lib/supabase'
 import { isDemoMode } from '@/lib/mode'
-import { getDemoClientByToken, getDemoRequirementsWithUploads } from '@/lib/demo-data'
+import {
+  getDemoClientByToken,
+  getDemoRequirementsWithUploads,
+  getDemoUploadHistory,
+} from '@/lib/demo-data'
+import type { UploadHistoryRow } from '@/lib/client-cycles'
 import type {
   Client,
   DocumentRequirement,
@@ -262,6 +267,28 @@ export async function fetchRequirementsWithUploads(
     ...req,
     uploads: uploads.filter(u => u.requirement_id === req.id),
   }))
+}
+
+/**
+ * Light upload history for cycle counting (Phase 5.1).
+ * All periods for this client — filtered to lookback in pure layer.
+ */
+export async function fetchClientUploadHistory(
+  clientId: string,
+): Promise<UploadHistoryRow[]> {
+  if (isDemoMode) return getDemoUploadHistory(clientId)
+
+  const { data, error } = await supabase
+    .from('document_uploads')
+    .select('requirement_id, period_year, period_month, uploaded_at')
+    .eq('client_id', clientId)
+
+  if (error) {
+    console.error('[fetchClientUploadHistory] failed:', error.message)
+    return []
+  }
+
+  return (data ?? []) as UploadHistoryRow[]
 }
 
 // ─── ENGAGEMENT LETTERS & SIGNATURES ────────────────────────────────────────

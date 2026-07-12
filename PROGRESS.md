@@ -24,6 +24,7 @@ Thin portal + close-PREP; FinKeel remains flagship. Not competing with TaxDome /
 | **Phase 3** | Judgment hub | ✅ | Dashboard work-queue filters + Documents tabs (docs/exceptions/confirms/package) |
 | **Phase 4** | Editable playbooks | ✅ | Allowlist steps, CRUD, run audit, Analysis UI; migration **011** applied |
 | **Phase 5** | Earned intelligence | ✅ | Per-client memory on upload; reminder personalization locked &lt; Loop 2; k≥5 cohort gate |
+| **Phase 5.1** | Multi-period cycles | ✅ | 12-mo lookback snapshots; Riverside demo Loop 2+; design doc `BOOKDROP_PHASE_5_1_DESIGN.md` |
 
 ## Mode
 - Local `.env`: Supabase URL/anon present; **`VITE_MODE` unset → defaults to `demo`** (`src/lib/mode.ts`)

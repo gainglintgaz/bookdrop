@@ -92,3 +92,10 @@ Append-only. Newest entries at bottom.
 - PR: https://github.com/gainglintgaz/bookdrop/pull/16
 - Phase 5: per-client category-memory on upload; client-cycles reminder lock; aggregate-gate k≥5
 - Client detail “Earned intelligence” honesty strip
+
+### Phase 5.1 multi-period cycles (design → code → verify)
+- Design: `BOOKDROP_PHASE_5_1_DESIGN.md`
+- `buildPeriodSnapshots` / `summarizeClientCycles` over 12-month lookback
+- `fetchClientUploadHistory` + demo prior months for Riverside (client-001)
+- Client detail strip shows complete months + median completion day when unlocked
+- 153 tests; sign-document rate-limit TS narrow

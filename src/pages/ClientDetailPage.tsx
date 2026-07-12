@@ -20,8 +20,13 @@ import { exportMonthCSV, copyTeamsSummary } from '@/lib/export-csv'
 import { runCompletenessChecks } from '@/lib/completeness-check'
 import { evaluatePackageDraft } from '@/lib/package-draft'
 import { DOCS_WORK_TABS, docsTabHasWork, type DocsWorkTab } from '@/lib/work-queue'
-import { getReminderPersonalizationState } from '@/lib/client-cycles'
+import {
+  buildPeriodSnapshots,
+  summarizeClientCycles,
+  type ClientPeriodSnapshot,
+} from '@/lib/client-cycles'
 import { getLearningStats } from '@/lib/category-memory'
+import { fetchClientUploadHistory, fetchRequirements } from '@/lib/db'
 import type { ReconciliationResult } from '@/lib/reconciliation'
 import { useAccountType } from '@/hooks/useAccountType'
 import type { WorkflowResult } from '@/lib/workflow-engine'
@@ -103,6 +108,9 @@ export function ClientDetailPage() {
   const [engagementLetters, setEngagementLetters] = useState<EngagementLetterWithSignature[]>([])
   const [uploadingLetter, setUploadingLetter] = useState(false)
   const [letterLabel, setLetterLabel] = useState('')
+  /** Phase 5.1 multi-period cycle snapshots (null = not loaded / failed). */
+  const [cycleSnapshots, setCycleSnapshots] = useState<ClientPeriodSnapshot[] | null>(null)
+  const [cycleHistoryError, setCycleHistoryError] = useState<string | null>(null)
   const user = useAuthStore(state => state.user)
   const bookkeeperId = useAuthStore(state => state.bookkeeper?.id ?? null)
   const plan = useAuthStore(state => state.bookkeeper?.plan ?? 'free')
@@ -111,14 +119,31 @@ export function ClientDetailPage() {
     if (!clientId) return
     setLoading(true)
     setError(null)
+    setCycleHistoryError(null)
 
     try {
       if (isDemoMode) {
         const demoClient = getDemoClient(clientId)
         if (!demoClient) throw new Error('Client not found')
         setClient(demoClient)
-        setRequirements(getDemoRequirementsWithUploads(clientId))
+        const reqs = getDemoRequirementsWithUploads(clientId)
+        setRequirements(reqs)
         setReminderLog(getDemoReminderLogs(clientId))
+        // Multi-period history for earned intelligence
+        try {
+          const history = await fetchClientUploadHistory(clientId)
+          const snaps = buildPeriodSnapshots({
+            requirements: reqs.map(r => ({ id: r.id, required: r.required })),
+            uploads: history,
+            endYear: period.year,
+            endMonth: period.month,
+          })
+          setCycleSnapshots(snaps)
+        } catch (histErr) {
+          console.warn('[ClientDetail] cycle history failed (demo):', histErr)
+          setCycleSnapshots(null)
+          setCycleHistoryError('History unavailable — showing this month only')
+        }
       } else {
         const { data: clientData, error: clientErr } = await supabase
           .from('clients')
@@ -147,6 +172,24 @@ export function ClientDetailPage() {
 
         const letters = await fetchEngagementLetters(clientId)
         setEngagementLetters(letters)
+
+        try {
+          const [history, allReqs] = await Promise.all([
+            fetchClientUploadHistory(clientId),
+            fetchRequirements(clientId),
+          ])
+          const snaps = buildPeriodSnapshots({
+            requirements: allReqs.map(r => ({ id: r.id, required: r.required })),
+            uploads: history,
+            endYear: period.year,
+            endMonth: period.month,
+          })
+          setCycleSnapshots(snaps)
+        } catch (histErr) {
+          console.warn('[ClientDetail] cycle history failed:', histErr)
+          setCycleSnapshots(null)
+          setCycleHistoryError('History unavailable — showing this month only')
+        }
       }
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Failed to load client'
@@ -212,11 +255,20 @@ export function ClientDetailPage() {
     parsedStatements.length > 0 ? parsedStatements : undefined,
   )
 
-  // Phase 5 — loop gate for reminder personalization (LOCKED until 2 complete months).
-  // Only count periods we can prove complete from loaded data. Do not invent history.
+  // Phase 5.1 — multi-period cycles when history loaded; else this month only (honest fallback).
   const thisPeriodComplete =
     requiredCount > 0 && uploadedCount >= requiredCount
-  const earnedLoopCount = thisPeriodComplete ? 1 : 0
+  const fallbackSnapshots: ClientPeriodSnapshot[] = [
+    {
+      year: period.year,
+      month: period.month,
+      requiredDocs: requiredCount,
+      uploadedRequiredDocs: uploadedCount,
+      complete: thisPeriodComplete,
+      completionDay: null,
+    },
+  ]
+  const cycleSummary = summarizeClientCycles(cycleSnapshots ?? fallbackSnapshots)
 
   const handleZipDownload = async () => {
     setZipping(true)
@@ -277,24 +329,47 @@ export function ClientDetailPage() {
         </div>
       </div>
 
-      {/* Phase 5 — earned intelligence honesty strip */}
+      {/* Phase 5.1 — earned intelligence (multi-period cycles when available) */}
       {(() => {
-        const remGate = getReminderPersonalizationState(earnedLoopCount)
         const learn = getLearningStats(client.id)
+        const remGate = cycleSummary.reminderGate
+        const pref = cycleSummary.preferredDay
         return (
           <div className="mb-4 rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-xs text-gray-600">
             <p className="font-semibold text-gray-800">Earned intelligence (this client)</p>
+            {cycleHistoryError && (
+              <p className="mt-1 text-amber-800 bg-amber-50 border border-amber-200 rounded px-2 py-1">
+                {cycleHistoryError}
+              </p>
+            )}
             <ul className="mt-1.5 space-y-1">
+              <li>
+                Complete months (last 12):{' '}
+                <span className="font-medium text-gray-800">{cycleSummary.loopCount}</span>
+                {cycleSummary.completePeriods.length > 0 && (
+                  <span className="text-gray-500">
+                    {' '}
+                    ·{' '}
+                    {cycleSummary.completePeriods
+                      .slice(0, 4)
+                      .map(p => `${p.year}-${String(p.month).padStart(2, '0')}`)
+                      .join(', ')}
+                    {cycleSummary.completePeriods.length > 4 ? '…' : ''}
+                  </span>
+                )}
+              </li>
               <li>
                 Category memory:{' '}
                 {learn.totalCorrections > 0
-                  ? `${learn.totalCorrections} correction${learn.totalCorrections === 1 ? '' : 's'} taught for this client — applied on next portal upload`
+                  ? `${learn.totalCorrections} correction${learn.totalCorrections === 1 ? '' : 's'} for this client — applied on next portal upload`
                   : 'No corrections yet. Fix a line in Exceptions to teach the next upload.'}
               </li>
               <li>
                 Reminder personalization:{' '}
                 {remGate.unlocked
-                  ? `Unlocked (${remGate.loopCount} complete months). Preferred day inference available when submission-day samples exist.`
+                  ? pref
+                    ? `Unlocked. Median completion day ~${pref.day}. ${pref.dataBasis}`
+                    : `Unlocked (${remGate.loopCount} complete months). Preferred day needs ≥2 completion dates with timestamps.`
                   : remGate.lockedCopy}
               </li>
               <li className="text-gray-500">

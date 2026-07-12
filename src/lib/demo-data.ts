@@ -14,9 +14,16 @@ import type {
 } from '@/types'
 import { computeSubmissionStatus } from '@/types'
 import { getCurrentPeriod } from '@/lib/utils'
+import type { UploadHistoryRow } from '@/lib/client-cycles'
 
 // Re-export isDemoMode so existing imports keep working
 export { isDemoMode as DEMO_MODE } from '@/lib/mode'
+
+/** Shift calendar month by delta (negative = past). */
+function shiftMonth(year: number, month: number, delta: number): { year: number; month: number } {
+  const d = new Date(Date.UTC(year, month - 1 + delta, 1))
+  return { year: d.getUTCFullYear(), month: d.getUTCMonth() + 1 }
+}
 
 // ─── DEMO BOOKKEEPER ───────────────────────────────────────────────────────
 
@@ -95,6 +102,17 @@ const demoRequirements: Record<string, DocumentRequirement[]> = {
   ],
 }
 
+// Prior complete months for Phase 5.1 (relative to getCurrentPeriod above)
+const prior1 = shiftMonth(year, month, -1)
+const prior2 = shiftMonth(year, month, -2)
+const priorYear1 = prior1.year
+const priorMonth1 = prior1.month
+const priorYear2 = prior2.year
+const priorMonth2 = prior2.month
+// Completion days for median inference (day 3 and day 5 → median-ish)
+const priorCompleteAt1 = `${priorYear1}-${String(priorMonth1).padStart(2, '0')}-03T16:00:00Z`
+const priorCompleteAt2 = `${priorYear2}-${String(priorMonth2).padStart(2, '0')}-05T14:00:00Z`
+
 // Some clients have uploads, some don't (realistic mix)
 const demoUploads: DocumentUpload[] = [
   // Client 1: complete — bank/CC include AI summaries for default-path exceptions UI
@@ -157,6 +175,47 @@ const demoUploads: DocumentUpload[] = [
 
   // Solo client (Mike Torres / Acme Supplies): partial — 1 of 2 required
   { id: 'up-s01', requirement_id: 'req-s01', client_id: 'client-solo-001', bookkeeper_id: 'bk-demo-solo-001', period_year: year, period_month: month, filename_original: 'chase_checking_apr2026.pdf', storage_path: 'demo/solo-chase.pdf', file_size_bytes: 198_656, uploaded_at: '2026-04-05T10:30:00Z' },
+
+  // ── Phase 5.1: Riverside (client-001) multi-period complete history ──────
+  // Two prior complete months so demo can unlock Loop 2+ personalization honestly.
+  // Prior month 1 (lookback -1)
+  {
+    id: 'up-001-m1-bank', requirement_id: 'req-001', client_id: 'client-001', bookkeeper_id: 'bk-demo-001',
+    period_year: priorYear1, period_month: priorMonth1,
+    filename_original: 'chase_checking_prior1.pdf', storage_path: 'demo/chase-p1.pdf',
+    file_size_bytes: 240_000, uploaded_at: priorCompleteAt1,
+  },
+  {
+    id: 'up-001-m1-cc', requirement_id: 'req-002', client_id: 'client-001', bookkeeper_id: 'bk-demo-001',
+    period_year: priorYear1, period_month: priorMonth1,
+    filename_original: 'amex_prior1.pdf', storage_path: 'demo/amex-p1.pdf',
+    file_size_bytes: 180_000, uploaded_at: priorCompleteAt1,
+  },
+  {
+    id: 'up-001-m1-pay', requirement_id: 'req-004', client_id: 'client-001', bookkeeper_id: 'bk-demo-001',
+    period_year: priorYear1, period_month: priorMonth1,
+    filename_original: 'gusto_prior1.pdf', storage_path: 'demo/gusto-p1.pdf',
+    file_size_bytes: 100_000, uploaded_at: priorCompleteAt1,
+  },
+  // Prior month 2 (lookback -2)
+  {
+    id: 'up-001-m2-bank', requirement_id: 'req-001', client_id: 'client-001', bookkeeper_id: 'bk-demo-001',
+    period_year: priorYear2, period_month: priorMonth2,
+    filename_original: 'chase_checking_prior2.pdf', storage_path: 'demo/chase-p2.pdf',
+    file_size_bytes: 238_000, uploaded_at: priorCompleteAt2,
+  },
+  {
+    id: 'up-001-m2-cc', requirement_id: 'req-002', client_id: 'client-001', bookkeeper_id: 'bk-demo-001',
+    period_year: priorYear2, period_month: priorMonth2,
+    filename_original: 'amex_prior2.pdf', storage_path: 'demo/amex-p2.pdf',
+    file_size_bytes: 175_000, uploaded_at: priorCompleteAt2,
+  },
+  {
+    id: 'up-001-m2-pay', requirement_id: 'req-004', client_id: 'client-001', bookkeeper_id: 'bk-demo-001',
+    period_year: priorYear2, period_month: priorMonth2,
+    filename_original: 'gusto_prior2.pdf', storage_path: 'demo/gusto-p2.pdf',
+    file_size_bytes: 98_000, uploaded_at: priorCompleteAt2,
+  },
 ]
 
 const demoClients: Client[] = [
@@ -234,4 +293,16 @@ export function getDemoRequirementsWithUploads(clientId: string): RequirementWit
 
 export function getDemoReminderLogs(clientId: string): ReminderLog[] {
   return demoReminderLogs.filter(r => r.client_id === clientId && r.period_year === year && r.period_month === month)
+}
+
+/** All-period upload rows for cycle history (Phase 5.1). Not filtered to current month. */
+export function getDemoUploadHistory(clientId: string): UploadHistoryRow[] {
+  return demoUploads
+    .filter(u => u.client_id === clientId)
+    .map(u => ({
+      requirement_id: u.requirement_id,
+      period_year: u.period_year,
+      period_month: u.period_month,
+      uploaded_at: u.uploaded_at,
+    }))
 }
