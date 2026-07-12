@@ -147,7 +147,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   // ── Rate limit (5 attempts/hour per token — applies to BOTH multi & legacy) ─
   const rate = await checkRateLimit(effectiveToken, ipAddress, userAgent)
   if (!rate.ok) {
-    res.setHeader('Retry-After', String(rate.retryAfterSeconds))
+    // Narrow discriminated union before reading retryAfterSeconds
+    const retryAfter = 'retryAfterSeconds' in rate ? rate.retryAfterSeconds : 3600
+    res.setHeader('Retry-After', String(retryAfter))
     return res.status(429).json({
       error: 'Too many signing attempts. Please try again later.',
     })

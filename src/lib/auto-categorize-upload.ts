@@ -22,6 +22,7 @@ import {
   type StatementSummary,
 } from './parse-bank-statement'
 import { categorizeTransactions } from './categorization-engine'
+import { getLearnedCategory } from './category-memory'
 import type {
   DocType,
   ParsedStatementSummary,
@@ -42,11 +43,30 @@ function isParseableFile(filename: string): boolean {
   return lower.endsWith('.pdf') || lower.endsWith('.csv')
 }
 
+/** One line ready to insert into document_line_items (id assigned on insert). */
+export interface AutoCategorizedLineDraft {
+  line_index: number
+  txn_date: string | null
+  description_raw: string
+  description_display: string
+  amount_cents: number
+  amount_sign: 'credit' | 'debit'
+  suggested_category: string
+  suggested_subcategory: string | null
+  confidence: 'high' | 'medium' | 'low'
+  matched_vendor: string | null
+  source_kind: 'statement_parse' | 'pdf_parse' | 'csv_import'
+  source_rule: string | null
+  engine_version: string
+}
+
 export interface AutoCategorizationResult {
   parsedSummary: ParsedStatementSummary
   categorizationSummary: UploadCategorizationSummary
   /** Aggregate confidence — derived from the per-transaction confidence distribution. */
   aggregateConfidence: 'high' | 'medium' | 'low'
+  /** Line-level drafts for document_line_items (Phase 1). */
+  lines: AutoCategorizedLineDraft[]
 }
 
 /**
@@ -64,6 +84,7 @@ export interface AutoCategorizationResult {
 export async function autoCategorizeUpload(
   file: File,
   docType: DocType,
+  opts?: { clientId?: string },
 ): Promise<AutoCategorizationResult | null> {
   if (!shouldAutoCategorize(docType)) return null
   if (!isParseableFile(file.name)) return null
@@ -85,6 +106,12 @@ export async function autoCategorizeUpload(
     return null
   }
 
+  const sourceKind: AutoCategorizedLineDraft['source_kind'] = file.name
+    .toLowerCase()
+    .endsWith('.csv')
+    ? 'csv_import'
+    : 'pdf_parse'
+
   if (statement.transactions.length === 0) {
     // Parsed but empty. Still record a parsed summary so the upload row reflects
     // that we tried, and so the bookkeeper sees "0 transactions extracted" rather
@@ -93,6 +120,7 @@ export async function autoCategorizeUpload(
       parsedSummary: toParsedSummary(statement),
       categorizationSummary: emptyCategorizationSummary(),
       aggregateConfidence: 'low',
+      lines: [],
     }
   }
 
@@ -107,11 +135,69 @@ export async function autoCategorizeUpload(
 
   const report = categorizeTransactions(txns)
 
+  // Phase 5: apply per-client learned corrections before writing lines
+  if (opts?.clientId) {
+    applyClientCategoryMemory(report, opts.clientId)
+  }
+
+  const lines = toLineDrafts(statement, report, sourceKind)
+
   return {
     parsedSummary: toParsedSummary(statement),
     categorizationSummary: toCategorizationSummary(report),
     aggregateConfidence: deriveAggregateConfidence(report),
+    lines,
   }
+}
+
+/**
+ * Override engine categories with this client's learned map.
+ * Never uses another client's corrections.
+ */
+function applyClientCategoryMemory(
+  report: {
+    transactions: Array<{
+      originalDescription: string
+      cleanedDescription: string
+      category: string
+      subcategory: string
+      confidence: 'high' | 'medium' | 'low'
+      matchedVendor: string | null
+      flags: string[]
+    }>
+    summary: {
+      totalCategorized: number
+      highConfidence: number
+      mediumConfidence: number
+      lowConfidence: number
+    }
+  },
+  clientId: string,
+): void {
+  let hi = 0
+  let med = 0
+  let lo = 0
+
+  for (const t of report.transactions) {
+    const learned = getLearnedCategory(clientId, t.originalDescription || t.cleanedDescription)
+    if (learned && learned.category) {
+      t.category = learned.category
+      t.subcategory = learned.subcategory || t.subcategory
+      // Learned from human correction → treat as high confidence for this client
+      t.confidence = learned.confidence >= 2 ? 'high' : 'medium'
+      t.matchedVendor = t.matchedVendor ?? 'client_memory'
+      if (!t.flags.includes('client_memory')) {
+        t.flags.push('client_memory')
+      }
+    }
+    if (t.confidence === 'high') hi++
+    else if (t.confidence === 'medium') med++
+    else lo++
+  }
+
+  report.summary.highConfidence = hi
+  report.summary.mediumConfidence = med
+  report.summary.lowConfidence = lo
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -186,4 +272,65 @@ export function deriveAggregateConfidence(r: CategorizationReportLike): 'high' |
   if (loPct >= 0.4) return 'low'
   if (hiPct >= 0.7) return 'high'
   return 'medium'
+}
+
+const ENGINE_VERSION = 'categorize-v1'
+
+function toLineDrafts(
+  statement: StatementSummary,
+  report: {
+    transactions: Array<{
+      originalDescription: string
+      cleanedDescription: string
+      category: string
+      subcategory: string
+      confidence: 'high' | 'medium' | 'low'
+      matchedVendor: string | null
+    }>
+  },
+  sourceKind: AutoCategorizedLineDraft['source_kind'],
+): AutoCategorizedLineDraft[] {
+  const n = Math.min(statement.transactions.length, report.transactions.length)
+  const lines: AutoCategorizedLineDraft[] = []
+  for (let i = 0; i < n; i++) {
+    const raw = statement.transactions[i]
+    const cat = report.transactions[i]
+    const amountCents = Math.round(Math.abs(raw.amount) * 100)
+    const sign: 'credit' | 'debit' = raw.amount >= 0 ? 'credit' : 'debit'
+    lines.push({
+      line_index: i,
+      txn_date: parseTxnDate(raw.date),
+      description_raw: raw.description,
+      description_display: cat.cleanedDescription || raw.description,
+      amount_cents: amountCents,
+      amount_sign: sign,
+      suggested_category: cat.category,
+      suggested_subcategory: cat.subcategory || null,
+      confidence: cat.confidence,
+      matched_vendor: cat.matchedVendor,
+      source_kind: sourceKind,
+      source_rule:
+        cat.matchedVendor === 'client_memory'
+          ? 'client_memory'
+          : cat.matchedVendor
+            ? `vendor:${cat.matchedVendor}`
+            : null,
+      engine_version: ENGINE_VERSION,
+    })
+  }
+  return lines
+}
+
+/** Best-effort date for storage; null if unparseable (honest, not invented). */
+function parseTxnDate(raw: string): string | null {
+  if (!raw || !raw.trim()) return null
+  // MM/DD/YYYY or MM/DD
+  const m = raw.trim().match(/^(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?/)
+  if (!m) return null
+  const month = Number(m[1])
+  const day = Number(m[2])
+  let year = m[3] ? Number(m[3]) : new Date().getFullYear()
+  if (year < 100) year += 2000
+  if (month < 1 || month > 12 || day < 1 || day > 31) return null
+  return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
 }

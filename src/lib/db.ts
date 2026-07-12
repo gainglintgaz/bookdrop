@@ -4,7 +4,12 @@
 
 import { supabase } from '@/lib/supabase'
 import { isDemoMode } from '@/lib/mode'
-import { getDemoClientByToken, getDemoRequirementsWithUploads } from '@/lib/demo-data'
+import {
+  getDemoClientByToken,
+  getDemoRequirementsWithUploads,
+  getDemoUploadHistory,
+} from '@/lib/demo-data'
+import type { UploadHistoryRow } from '@/lib/client-cycles'
 import type {
   Client,
   DocumentRequirement,
@@ -148,6 +153,36 @@ export async function uploadDocumentFile(
   return data
 }
 
+/**
+ * Persist AI-first pivot D.1 enrichment after a successful upload.
+ * Never throws to the caller for demo mode; cloud failures surface as thrown errors
+ * so UploadPage can log + keep local UI state.
+ */
+export async function updateUploadAiEnrichment(
+  uploadId: string,
+  enrichment: {
+    auto_categorized_at: string
+    auto_categorization_confidence: 'high' | 'medium' | 'low'
+    parsed_summary: DocumentUpload['parsed_summary']
+    categorization_summary: DocumentUpload['categorization_summary']
+  },
+): Promise<void> {
+  if (isDemoMode) return
+  if (uploadId.startsWith('demo-upload-')) return
+
+  const { error } = await supabase
+    .from('document_uploads')
+    .update({
+      auto_categorized_at: enrichment.auto_categorized_at,
+      auto_categorization_confidence: enrichment.auto_categorization_confidence,
+      parsed_summary: enrichment.parsed_summary,
+      categorization_summary: enrichment.categorization_summary,
+    })
+    .eq('id', uploadId)
+
+  if (error) throw new Error(`AI enrichment update failed: ${error.message}`)
+}
+
 // ─── POST-UPLOAD NOTIFICATION ───────────────────────────────────────────────
 
 /** Fire-and-forget notification to bookkeeper after a successful upload. */
@@ -232,6 +267,28 @@ export async function fetchRequirementsWithUploads(
     ...req,
     uploads: uploads.filter(u => u.requirement_id === req.id),
   }))
+}
+
+/**
+ * Light upload history for cycle counting (Phase 5.1).
+ * All periods for this client — filtered to lookback in pure layer.
+ */
+export async function fetchClientUploadHistory(
+  clientId: string,
+): Promise<UploadHistoryRow[]> {
+  if (isDemoMode) return getDemoUploadHistory(clientId)
+
+  const { data, error } = await supabase
+    .from('document_uploads')
+    .select('requirement_id, period_year, period_month, uploaded_at')
+    .eq('client_id', clientId)
+
+  if (error) {
+    console.error('[fetchClientUploadHistory] failed:', error.message)
+    return []
+  }
+
+  return (data ?? []) as UploadHistoryRow[]
 }
 
 // ─── ENGAGEMENT LETTERS & SIGNATURES ────────────────────────────────────────

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useClients } from '@/hooks/useClients'
 import { usePlanGating } from '@/hooks/usePlanGating'
@@ -18,6 +18,15 @@ import {
   Calendar, Package, BarChart3,
 } from 'lucide-react'
 import type { SubmissionStatus, ClientWithStatus } from '@/types'
+import { sortClientsByUrgency, urgencyBandLabel, type UrgencyResult } from '@/lib/urgency'
+import {
+  DASHBOARD_FILTERS,
+  countByFilter,
+  filterClientsByWorkQueue,
+  loadSavedDashboardFilter,
+  saveDashboardFilter,
+  type DashboardFilterId,
+} from '@/lib/work-queue'
 
 const PORTAL_BASE = `${window.location.origin}/upload/`
 
@@ -45,6 +54,16 @@ export function DashboardPage() {
   const { clients, loading, error, period, setPeriod, refresh } = useClients()
   const { canAddClient, isAtLimit, upgradeMessage } = usePlanGating(clients.length)
   const bookkeeper = useAuthStore(state => state.bookkeeper)
+  const [workFilter, setWorkFilter] = useState<DashboardFilterId>('all')
+
+  useEffect(() => {
+    setWorkFilter(loadSavedDashboardFilter())
+  }, [])
+
+  function onWorkFilter(id: DashboardFilterId) {
+    setWorkFilter(id)
+    saveDashboardFilter(id)
+  }
 
   // ---- Summary Stats ----
   const counts: Record<SubmissionStatus, number> = {
@@ -70,12 +89,21 @@ export function DashboardPage() {
     ? Math.round((counts.complete / activeClients) * 100)
     : 0
 
-  // Clients needing attention
-  const clientsMissing = clients.filter(
+  // D.5 — sort everyone by urgency (who needs attention now)
+  const clientsByUrgency = useMemo(() => sortClientsByUrgency(clients), [clients])
+  const filterCounts = useMemo(
+    () => countByFilter(clientsByUrgency, period),
+    [clientsByUrgency, period],
+  )
+  const filteredByQueue = useMemo(
+    () => filterClientsByWorkQueue(clientsByUrgency, workFilter, period),
+    [clientsByUrgency, workFilter, period],
+  )
+  const clientsMissing = filteredByQueue.filter(
     c => c.submissionStatus === 'not_started' || c.submissionStatus === 'missing',
   )
-  const clientsPartial = clients.filter(c => c.submissionStatus === 'partial')
-  const clientsComplete = clients.filter(c => c.submissionStatus === 'complete')
+  const clientsPartial = filteredByQueue.filter(c => c.submissionStatus === 'partial')
+  const clientsComplete = filteredByQueue.filter(c => c.submissionStatus === 'complete')
 
   // ---- Loading ----
   if (loading) {
@@ -216,14 +244,76 @@ export function DashboardPage() {
         />
       </div>
 
+      {/* Phase 3 — work queue filters (customizable, persisted) */}
+      {clients.length > 0 && (
+        <div className="mb-6">
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-400">
+              Work queue
+            </h2>
+            <span className="text-[11px] text-gray-400">
+              Filter saved in this browser · counts are real for this period
+            </span>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {DASHBOARD_FILTERS.map(f => (
+              <button
+                key={f.id}
+                type="button"
+                title={f.description}
+                onClick={() => onWorkFilter(f.id)}
+                className={cn(
+                  'rounded-full border px-3 py-1.5 text-xs font-medium transition-colors',
+                  workFilter === f.id
+                    ? 'border-primary bg-primary text-white'
+                    : 'border-gray-200 bg-white text-gray-700 hover:border-primary/40',
+                )}
+              >
+                {f.label}
+                <span className={cn('ml-1.5 tabular-nums', workFilter === f.id ? 'text-white/80' : 'text-gray-400')}>
+                  {filterCounts[f.id]}
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* ---- Two Column Layout ---- */}
       {clients.length > 0 && (
         <div className="mb-8 grid gap-6 lg:grid-cols-5">
           {/* LEFT: Action Items (60%) */}
           <div className="lg:col-span-3 space-y-4">
-            <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-400">
-              Action Items
-            </h2>
+            <div className="flex items-center justify-between gap-2">
+              <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-400">
+                Action Items
+              </h2>
+              <span className="text-[11px] text-gray-400">
+                Sorted by urgency · filter: {DASHBOARD_FILTERS.find(f => f.id === workFilter)?.label}
+              </span>
+            </div>
+
+            {/* Top 3 across filtered set */}
+            {filteredByQueue.length > 0 && (
+              <ActionCard
+                icon={Zap}
+                iconColor="text-primary"
+                iconBg="bg-emerald-50"
+                title="Needs your attention first"
+                description="Ranked from current-period docs, history when available, and low-confidence review items. Not a judgment score — an action order."
+              >
+                <div className="mt-3 space-y-2">
+                  {filteredByQueue.slice(0, 3).map(c => (
+                    <ActionClientRow key={c.id} client={c} urgency={c.urgency} />
+                  ))}
+                </div>
+              </ActionCard>
+            )}
+            {filteredByQueue.length === 0 && (
+              <div className="rounded-xl border border-gray-200 bg-white p-6 text-center text-sm text-gray-500">
+                No clients match this filter for {period.month}/{period.year}.
+              </div>
+            )}
 
             {/* Missing docs - needs reminders */}
             {clientsMissing.length > 0 && (
@@ -236,7 +326,7 @@ export function DashboardPage() {
               >
                 <div className="mt-3 space-y-2">
                   {clientsMissing.slice(0, 3).map(c => (
-                    <ActionClientRow key={c.id} client={c} />
+                    <ActionClientRow key={c.id} client={c} urgency={c.urgency} />
                   ))}
                   {clientsMissing.length > 3 && (
                     <Link
@@ -261,7 +351,7 @@ export function DashboardPage() {
               >
                 <div className="mt-3 space-y-2">
                   {clientsPartial.slice(0, 3).map(c => (
-                    <ActionClientRow key={c.id} client={c} />
+                    <ActionClientRow key={c.id} client={c} urgency={c.urgency} />
                   ))}
                   {clientsPartial.length > 3 && (
                     <Link
@@ -286,16 +376,21 @@ export function DashboardPage() {
               >
                 <div className="mt-3 space-y-2">
                   {clientsComplete.slice(0, 3).map(c => (
-                    <div key={c.id} className="flex items-center justify-between">
+                    <div key={c.id} className="flex items-center justify-between gap-2">
+                      <div className="min-w-0">
+                        <Link
+                          to={`/clients/${c.id}`}
+                          className="text-sm font-medium text-gray-700 hover:text-primary"
+                        >
+                          {c.business_name}
+                        </Link>
+                        {c.urgency.reasons[0] && (
+                          <p className="text-[11px] text-gray-400 truncate">{c.urgency.reasons[0]}</p>
+                        )}
+                      </div>
                       <Link
                         to={`/clients/${c.id}`}
-                        className="text-sm font-medium text-gray-700 hover:text-primary"
-                      >
-                        {c.business_name}
-                      </Link>
-                      <Link
-                        to={`/clients/${c.id}`}
-                        className="text-xs font-medium text-primary hover:underline"
+                        className="shrink-0 text-xs font-medium text-primary hover:underline"
                       >
                         Review
                       </Link>
@@ -333,12 +428,15 @@ export function DashboardPage() {
             <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-400">
               All Clients
             </h2>
-            <Link
-              to="/clients"
-              className="text-xs font-medium text-primary hover:underline flex items-center gap-1"
-            >
-              View full list <ArrowRight className="h-3 w-3" />
-            </Link>
+            <div className="flex items-center gap-3">
+              <span className="hidden text-[11px] text-gray-400 sm:inline">Highest urgency first</span>
+              <Link
+                to="/clients"
+                className="text-xs font-medium text-primary hover:underline flex items-center gap-1"
+              >
+                View full list <ArrowRight className="h-3 w-3" />
+              </Link>
+            </div>
           </div>
           <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
             {isDemoMode && (
@@ -352,6 +450,7 @@ export function DashboardPage() {
                 <thead>
                   <tr className="border-b border-gray-100 bg-gray-50/50">
                     <th className="px-4 py-3 font-medium text-gray-500 text-xs uppercase tracking-wide">Client</th>
+                    <th className="px-4 py-3 font-medium text-gray-500 text-xs uppercase tracking-wide">Urgency</th>
                     <th className="px-4 py-3 font-medium text-gray-500 text-xs uppercase tracking-wide">Status</th>
                     <th className="hidden px-4 py-3 font-medium text-gray-500 text-xs uppercase tracking-wide sm:table-cell">Progress</th>
                     <th className="hidden px-4 py-3 font-medium text-gray-500 text-xs uppercase tracking-wide sm:table-cell">Last Upload</th>
@@ -359,8 +458,8 @@ export function DashboardPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-50">
-                  {clients.map(client => (
-                    <ClientRow key={client.id} client={client} />
+                  {filteredByQueue.map(client => (
+                    <ClientRow key={client.id} client={client} urgency={client.urgency} />
                   ))}
                 </tbody>
               </table>
@@ -447,7 +546,13 @@ function ActionCard({ icon: Icon, iconColor, iconBg, title, description, childre
 
 // ---- Action Client Row (for action items section) ----
 
-function ActionClientRow({ client }: { client: ClientWithStatus }) {
+function ActionClientRow({
+  client,
+  urgency,
+}: {
+  client: ClientWithStatus
+  urgency?: UrgencyResult
+}) {
   const [sending, setSending] = useState(false)
   const [sent, setSent] = useState(false)
   const user = useAuthStore(state => state.user)
@@ -471,14 +576,18 @@ function ActionClientRow({ client }: { client: ClientWithStatus }) {
   return (
     <div className="flex items-center justify-between gap-2">
       <div className="min-w-0 flex-1">
-        <Link
-          to={`/clients/${client.id}`}
-          className="text-sm font-medium text-gray-700 hover:text-primary"
-        >
-          {client.business_name}
-        </Link>
-        <span className="ml-2 text-xs text-gray-400">
+        <div className="flex items-center gap-2">
+          <Link
+            to={`/clients/${client.id}`}
+            className="text-sm font-medium text-gray-700 hover:text-primary"
+          >
+            {client.business_name}
+          </Link>
+          {urgency && <UrgencyBadge urgency={urgency} compact />}
+        </div>
+        <span className="text-xs text-gray-400">
           {uploadedCount}/{requiredCount} docs
+          {urgency?.reasons[0] ? ` · ${urgency.reasons[0]}` : ''}
         </span>
       </div>
       <button
@@ -509,9 +618,41 @@ function ActionClientRow({ client }: { client: ClientWithStatus }) {
   )
 }
 
+// ---- Urgency badge ----
+
+function UrgencyBadge({ urgency, compact }: { urgency: UrgencyResult; compact?: boolean }) {
+  const colors =
+    urgency.band === 'critical'
+      ? 'bg-red-50 text-red-700 border-red-200'
+      : urgency.band === 'high'
+        ? 'bg-amber-50 text-amber-800 border-amber-200'
+        : urgency.band === 'medium'
+          ? 'bg-sky-50 text-sky-800 border-sky-200'
+          : 'bg-gray-50 text-gray-600 border-gray-200'
+  return (
+    <span
+      className={cn(
+        'inline-flex items-center rounded-full border font-medium',
+        compact ? 'px-1.5 py-0 text-[10px]' : 'px-2 py-0.5 text-[11px]',
+        colors,
+      )}
+      title={urgency.reasons.join(' · ')}
+    >
+      {urgencyBandLabel(urgency.band)}
+      {!compact && <span className="ml-1 opacity-70">{urgency.score}</span>}
+    </span>
+  )
+}
+
 // ---- Client Table Row ----
 
-function ClientRow({ client }: { client: ClientWithStatus }) {
+function ClientRow({
+  client,
+  urgency,
+}: {
+  client: ClientWithStatus
+  urgency: UrgencyResult
+}) {
   const navigate = useNavigate()
   const [sending, setSending] = useState(false)
   const [sent, setSent] = useState(false)
@@ -558,6 +699,9 @@ function ClientRow({ client }: { client: ClientWithStatus }) {
         <p className="mt-0.5 text-xs text-gray-400">
           {client.contact_name ?? client.contact_email}
         </p>
+      </td>
+      <td className="px-4 py-3.5">
+        <UrgencyBadge urgency={urgency} />
       </td>
       <td className="px-4 py-3.5">
         <StatusBadge status={client.submissionStatus} />

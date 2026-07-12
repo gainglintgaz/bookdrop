@@ -18,6 +18,15 @@ import { tenantConfig } from '@/lib/tenant.config'
 import { generateUploadDeadlineICS, getNextDeadline } from '@/lib/calendar'
 import { exportMonthCSV, copyTeamsSummary } from '@/lib/export-csv'
 import { runCompletenessChecks } from '@/lib/completeness-check'
+import { evaluatePackageDraft } from '@/lib/package-draft'
+import { DOCS_WORK_TABS, docsTabHasWork, type DocsWorkTab } from '@/lib/work-queue'
+import {
+  buildPeriodSnapshots,
+  summarizeClientCycles,
+  type ClientPeriodSnapshot,
+} from '@/lib/client-cycles'
+import { getLearningStats } from '@/lib/category-memory'
+import { fetchClientUploadHistory, fetchRequirements } from '@/lib/db'
 import type { ReconciliationResult } from '@/lib/reconciliation'
 import { useAccountType } from '@/hooks/useAccountType'
 import type { WorkflowResult } from '@/lib/workflow-engine'
@@ -40,6 +49,10 @@ const ExpensePolicyPanel = lazy(() => import('@/components/practitioner/ExpenseP
 const ReceiptScannerPanel = lazy(() => import('@/components/practitioner/ReceiptScannerPanel').then(m => ({ default: m.ReceiptScannerPanel })))
 const ActivityTimeline = lazy(() => import('@/components/practitioner/ActivityTimeline').then(m => ({ default: m.ActivityTimeline })))
 const MessagePanel = lazy(() => import('@/components/shared/MessagePanel').then(m => ({ default: m.MessagePanel })))
+const WorkflowLibraryPanel = lazy(() => import('@/components/practitioner/WorkflowLibraryPanel').then(m => ({ default: m.WorkflowLibraryPanel })))
+const PlaybookEditorPanel = lazy(() => import('@/components/practitioner/PlaybookEditorPanel').then(m => ({ default: m.PlaybookEditorPanel })))
+const ExceptionsQueue = lazy(() => import('@/components/practitioner/ExceptionsQueue').then(m => ({ default: m.ExceptionsQueue })))
+const ClientConfirmProofStrip = lazy(() => import('@/components/practitioner/ClientConfirmProofStrip').then(m => ({ default: m.ClientConfirmProofStrip })))
 import { checkAndFireTrigger, TRIGGER_FIRST_ZIP, TRIGGER_FIRST_REMINDER } from '@/lib/engagement-triggers'
 import { fetchEngagementLetters, uploadEngagementLetter } from '@/lib/db'
 import type { EngagementLetterWithSignature } from '@/types'
@@ -95,21 +108,42 @@ export function ClientDetailPage() {
   const [engagementLetters, setEngagementLetters] = useState<EngagementLetterWithSignature[]>([])
   const [uploadingLetter, setUploadingLetter] = useState(false)
   const [letterLabel, setLetterLabel] = useState('')
+  /** Phase 5.1 multi-period cycle snapshots (null = not loaded / failed). */
+  const [cycleSnapshots, setCycleSnapshots] = useState<ClientPeriodSnapshot[] | null>(null)
+  const [cycleHistoryError, setCycleHistoryError] = useState<string | null>(null)
   const user = useAuthStore(state => state.user)
+  const bookkeeperId = useAuthStore(state => state.bookkeeper?.id ?? null)
   const plan = useAuthStore(state => state.bookkeeper?.plan ?? 'free')
 
   const fetchData = useCallback(async () => {
     if (!clientId) return
     setLoading(true)
     setError(null)
+    setCycleHistoryError(null)
 
     try {
       if (isDemoMode) {
         const demoClient = getDemoClient(clientId)
         if (!demoClient) throw new Error('Client not found')
         setClient(demoClient)
-        setRequirements(getDemoRequirementsWithUploads(clientId))
+        const reqs = getDemoRequirementsWithUploads(clientId)
+        setRequirements(reqs)
         setReminderLog(getDemoReminderLogs(clientId))
+        // Multi-period history for earned intelligence
+        try {
+          const history = await fetchClientUploadHistory(clientId)
+          const snaps = buildPeriodSnapshots({
+            requirements: reqs.map(r => ({ id: r.id, required: r.required })),
+            uploads: history,
+            endYear: period.year,
+            endMonth: period.month,
+          })
+          setCycleSnapshots(snaps)
+        } catch (histErr) {
+          console.warn('[ClientDetail] cycle history failed (demo):', histErr)
+          setCycleSnapshots(null)
+          setCycleHistoryError('History unavailable — showing this month only')
+        }
       } else {
         const { data: clientData, error: clientErr } = await supabase
           .from('clients')
@@ -138,6 +172,24 @@ export function ClientDetailPage() {
 
         const letters = await fetchEngagementLetters(clientId)
         setEngagementLetters(letters)
+
+        try {
+          const [history, allReqs] = await Promise.all([
+            fetchClientUploadHistory(clientId),
+            fetchRequirements(clientId),
+          ])
+          const snaps = buildPeriodSnapshots({
+            requirements: allReqs.map(r => ({ id: r.id, required: r.required })),
+            uploads: history,
+            endYear: period.year,
+            endMonth: period.month,
+          })
+          setCycleSnapshots(snaps)
+        } catch (histErr) {
+          console.warn('[ClientDetail] cycle history failed:', histErr)
+          setCycleSnapshots(null)
+          setCycleHistoryError('History unavailable — showing this month only')
+        }
       }
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Failed to load client'
@@ -195,6 +247,28 @@ export function ClientDetailPage() {
   const requiredCount = requirements.filter(r => r.required).length
   const uploadedCount = requirements.filter(r => r.required && r.uploads.length > 0).length
   const allUploads = requirements.flatMap(r => r.uploads)
+  // P3 auto-draft: when completeness passes, package is ready without visiting Analysis.
+  const packageDraft = evaluatePackageDraft(
+    requirements,
+    period.year,
+    period.month,
+    parsedStatements.length > 0 ? parsedStatements : undefined,
+  )
+
+  // Phase 5.1 — multi-period cycles when history loaded; else this month only (honest fallback).
+  const thisPeriodComplete =
+    requiredCount > 0 && uploadedCount >= requiredCount
+  const fallbackSnapshots: ClientPeriodSnapshot[] = [
+    {
+      year: period.year,
+      month: period.month,
+      requiredDocs: requiredCount,
+      uploadedRequiredDocs: uploadedCount,
+      complete: thisPeriodComplete,
+      completionDay: null,
+    },
+  ]
+  const cycleSummary = summarizeClientCycles(cycleSnapshots ?? fallbackSnapshots)
 
   const handleZipDownload = async () => {
     setZipping(true)
@@ -204,6 +278,20 @@ export function ClientDetailPage() {
     checkAndFireTrigger(TRIGGER_FIRST_ZIP, () =>
       setNudge('How did that go? Was everything you needed in the ZIP?'),
     )
+  }
+
+  const handleDownloadPackage = async () => {
+    const m = await import('@/lib/finance-prep')
+    m.generateBookkeeperPackage({
+      businessName: client.business_name,
+      contactName: client.contact_name ?? '',
+      year: period.year,
+      month: period.month,
+      requirements,
+      completeness: packageDraft.completeness,
+      reconciliation: reconResult ?? undefined,
+      bookkeeperName: user?.email ?? undefined,
+    })
   }
 
   const handleSendReminder = async () => {
@@ -240,6 +328,57 @@ export function ClientDetailPage() {
           <MonthSelector year={period.year} month={period.month} onChange={setPeriod} />
         </div>
       </div>
+
+      {/* Phase 5.1 — earned intelligence (multi-period cycles when available) */}
+      {(() => {
+        const learn = getLearningStats(client.id)
+        const remGate = cycleSummary.reminderGate
+        const pref = cycleSummary.preferredDay
+        return (
+          <div className="mb-4 rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-xs text-gray-600">
+            <p className="font-semibold text-gray-800">Earned intelligence (this client)</p>
+            {cycleHistoryError && (
+              <p className="mt-1 text-amber-800 bg-amber-50 border border-amber-200 rounded px-2 py-1">
+                {cycleHistoryError}
+              </p>
+            )}
+            <ul className="mt-1.5 space-y-1">
+              <li>
+                Complete months (last 12):{' '}
+                <span className="font-medium text-gray-800">{cycleSummary.loopCount}</span>
+                {cycleSummary.completePeriods.length > 0 && (
+                  <span className="text-gray-500">
+                    {' '}
+                    ·{' '}
+                    {cycleSummary.completePeriods
+                      .slice(0, 4)
+                      .map(p => `${p.year}-${String(p.month).padStart(2, '0')}`)
+                      .join(', ')}
+                    {cycleSummary.completePeriods.length > 4 ? '…' : ''}
+                  </span>
+                )}
+              </li>
+              <li>
+                Category memory:{' '}
+                {learn.totalCorrections > 0
+                  ? `${learn.totalCorrections} correction${learn.totalCorrections === 1 ? '' : 's'} for this client — applied on next portal upload`
+                  : 'No corrections yet. Fix a line in Exceptions to teach the next upload.'}
+              </li>
+              <li>
+                Reminder personalization:{' '}
+                {remGate.unlocked
+                  ? pref
+                    ? `Unlocked. Median completion day ~${pref.day}. ${pref.dataBasis}`
+                    : `Unlocked (${remGate.loopCount} complete months). Preferred day needs ≥2 completion dates with timestamps.`
+                  : remGate.lockedCopy}
+              </li>
+              <li className="text-gray-500">
+                Cross-firm benchmarks stay suppressed until 5+ firms contribute (privacy floor).
+              </li>
+            </ul>
+          </div>
+        )
+      })()}
 
       {/* Summary bar */}
       <div className={cn(
@@ -326,6 +465,57 @@ export function ClientDetailPage() {
         </div>
       )}
 
+      {/* P3 — Package auto-draft when completeness gate passes */}
+      {packageDraft.status === 'ready_for_review' && (
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3">
+          <div className="flex items-start gap-2">
+            <Package className="mt-0.5 h-5 w-5 shrink-0 text-emerald-700" />
+            <div>
+              <p className="text-sm font-semibold text-emerald-900">Package ready for review</p>
+              <p className="mt-0.5 text-xs text-emerald-800">
+                Completeness score {packageDraft.completeness.score}/100 · {packageDraft.uploadCount} file
+                {packageDraft.uploadCount === 1 ? '' : 's'} for {formatPeriod(period.year, period.month)}.
+                Download the HTML package and/or ZIP of source documents — nothing is auto-posted to your books.
+              </p>
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={handleDownloadPackage}
+              className="flex items-center gap-1.5 rounded-md bg-emerald-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-800"
+            >
+              <Package className="h-3.5 w-3.5" />
+              Download package
+            </button>
+            {tenantConfig.features.zipDownload && (plan === 'starter' || plan === 'pro') && packageDraft.canDownloadZip && (
+              <button
+                type="button"
+                onClick={handleZipDownload}
+                disabled={zipping}
+                className="flex items-center gap-1.5 rounded-md border border-emerald-300 bg-white px-3 py-1.5 text-xs font-medium text-emerald-900 hover:bg-emerald-50 disabled:opacity-50"
+              >
+                {zipping ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Archive className="h-3.5 w-3.5" />}
+                {zipping ? 'Zipping...' : 'Download ZIP'}
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => setActiveTab('export')}
+              className="text-xs font-medium text-emerald-800 underline-offset-2 hover:underline"
+            >
+              Export tab
+            </button>
+          </div>
+        </div>
+      )}
+      {packageDraft.status === 'incomplete' && packageDraft.uploadCount > 0 && (
+        <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          <p className="font-medium">Package not ready yet</p>
+          <p className="mt-0.5 text-xs text-amber-800">{packageDraft.label}</p>
+        </div>
+      )}
+
       {/* ─── TAB BAR ────────────────────────────────────────────────────────────── */}
       <div className="mb-6 border-b border-gray-200">
         <nav className="-mb-px flex gap-1 sm:gap-6">
@@ -363,12 +553,16 @@ export function ClientDetailPage() {
           letterLabel={letterLabel}
           setLetterLabel={setLetterLabel}
           user={user}
+          bookkeeperId={bookkeeperId ?? user?.id ?? null}
           onLetterUploaded={async () => {
             if (!clientId) return
             const updated = await fetchEngagementLetters(clientId)
             setEngagementLetters(updated)
           }}
           setUploadingLetter={setUploadingLetter}
+          period={period}
+          packageDraft={packageDraft}
+          onDownloadPackage={handleDownloadPackage}
         />
       )}
 
@@ -377,8 +571,11 @@ export function ClientDetailPage() {
         <AnalysisTab
           requirements={requirements}
           client={client}
+          bookkeeperId={bookkeeperId ?? client.bookkeeper_id ?? 'bk-demo-001'}
           period={period}
           parsedStatements={parsedStatements}
+          reconResult={reconResult}
+          onSetReconResult={setReconResult}
           onStatementsParsed={async (stmts) => {
             setParsedStatements(stmts)
             // Auto-run ALL intelligence engines when statements are parsed
@@ -407,7 +604,6 @@ export function ClientDetailPage() {
               setPolicyReport(policyMod.checkExpensePolicy(allTxns))
             }
           }}
-          reconResult={reconResult}
           onRunReconciliation={async () => {
             const reconMod = await import('@/lib/reconciliation')
             if (parsedStatements.length > 0) {
@@ -448,6 +644,11 @@ export function ClientDetailPage() {
           parsedStatements={parsedStatements}
           insights={insights}
           bookkeeperName={user?.email ?? 'Bookkeeper'}
+          packageDraft={packageDraft}
+          onDownloadPackage={handleDownloadPackage}
+          onDownloadZip={handleZipDownload}
+          zipping={zipping}
+          plan={plan}
           teamsCopied={teamsCopied}
           onTeamsCopy={() => {
             copyTeamsSummary(client.business_name, requirements, period.year, period.month)
@@ -499,8 +700,12 @@ function DocumentsTab({
   letterLabel,
   setLetterLabel,
   user,
+  bookkeeperId,
   onLetterUploaded,
   setUploadingLetter,
+  period,
+  packageDraft,
+  onDownloadPackage,
 }: {
   requirements: RequirementWithUploads[]
   client: Client
@@ -510,17 +715,155 @@ function DocumentsTab({
   letterLabel: string
   setLetterLabel: (v: string) => void
   user: { id: string } | null
+  bookkeeperId: string | null
   onLetterUploaded: () => Promise<void>
   setUploadingLetter: (v: boolean) => void
+  period: { year: number; month: number }
+  packageDraft: ReturnType<typeof evaluatePackageDraft>
+  onDownloadPackage: () => void
 }) {
+  const [workTab, setWorkTab] = useState<DocsWorkTab>('docs')
+
   if (requirements.length === 0) {
     return <p className="py-8 text-center text-sm text-gray-400">No document requirements configured.</p>
   }
 
+  // Default-path exceptions (AI-first D.1) — surface without Analysis tab.
+  const categorizedUploads = requirements.flatMap(r =>
+    r.uploads
+      .filter(u => u.categorization_summary && u.parsed_summary)
+      .map(u => ({ req: r, upload: u })),
+  )
+  const lowConfidenceTotal = categorizedUploads.reduce(
+    (sum, { upload }) => sum + (upload.categorization_summary?.lowConfidence ?? 0),
+    0,
+  )
+  const flagsTotal = categorizedUploads.reduce(
+    (sum, { upload }) => sum + (upload.categorization_summary?.flagsCount ?? 0),
+    0,
+  )
+
+  const allPeriodUploads = requirements.flatMap(r => r.uploads)
+
   return (
     <div className="space-y-3">
-      {requirements.map(req => {
+      {/* Phase 3 — work sections (user switches freely) */}
+      <div className="flex flex-wrap gap-2 border-b border-gray-100 pb-3">
+        {DOCS_WORK_TABS.map(t => {
+          const hasWork = docsTabHasWork(t.id, requirements, period)
+          return (
+            <button
+              key={t.id}
+              type="button"
+              onClick={() => setWorkTab(t.id)}
+              className={cn(
+                'rounded-full px-3 py-1.5 text-xs font-medium border transition-colors',
+                workTab === t.id
+                  ? 'border-primary bg-primary text-white'
+                  : 'border-gray-200 bg-white text-gray-700 hover:border-primary/40',
+                !hasWork && workTab !== t.id && 'opacity-60',
+              )}
+            >
+              {t.label}
+            </button>
+          )
+        })}
+      </div>
+
+      {(workTab === 'docs' || workTab === 'confirms' || workTab === 'exceptions') && (
+      <Suspense fallback={null}>
+        <ClientConfirmProofStrip
+          clientId={client.id}
+          bookkeeperId={bookkeeperId}
+          uploads={allPeriodUploads}
+        />
+      </Suspense>
+      )}
+
+      {workTab === 'package' && (
+        <div
+          className={cn(
+            'rounded-lg border px-4 py-3 text-sm',
+            packageDraft.status === 'ready_for_review'
+              ? 'border-emerald-200 bg-emerald-50 text-emerald-950'
+              : packageDraft.status === 'incomplete'
+                ? 'border-amber-200 bg-amber-50 text-amber-950'
+                : 'border-gray-200 bg-white text-gray-700',
+          )}
+        >
+          <p className="font-semibold">
+            {packageDraft.status === 'ready_for_review'
+              ? 'Package ready for review'
+              : packageDraft.status === 'incomplete'
+                ? 'Package not ready'
+                : 'No package yet'}
+          </p>
+          <p className="mt-0.5 text-xs opacity-90">{packageDraft.label}</p>
+          <p className="mt-1 text-xs opacity-80">
+            Completeness {packageDraft.completeness.score}/100 · {packageDraft.uploadCount} file
+            {packageDraft.uploadCount === 1 ? '' : 's'}
+          </p>
+          {packageDraft.canDownloadPackage && (
+            <button
+              type="button"
+              onClick={onDownloadPackage}
+              className="mt-3 rounded-md bg-emerald-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-800"
+            >
+              Download package HTML
+            </button>
+          )}
+        </div>
+      )}
+
+      {(workTab === 'docs' || workTab === 'exceptions') && categorizedUploads.length > 0 && (
+        <div
+          className={cn(
+            'rounded-lg border px-4 py-3 text-sm',
+            lowConfidenceTotal > 0 || flagsTotal > 0
+              ? 'border-amber-200 bg-amber-50 text-amber-900'
+              : 'border-emerald-200 bg-emerald-50 text-emerald-900',
+          )}
+        >
+          <div className="flex items-start gap-2">
+            {lowConfidenceTotal > 0 || flagsTotal > 0 ? (
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+            ) : (
+              <CheckCircle className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
+            )}
+            <div>
+              <p className="font-medium">
+                {lowConfidenceTotal > 0 || flagsTotal > 0
+                  ? 'Exceptions from auto-categorization'
+                  : 'Uploads categorized on receipt'}
+              </p>
+              <p className="mt-0.5 text-xs opacity-90">
+                {categorizedUploads.length} statement upload{categorizedUploads.length === 1 ? '' : 's'} processed on the default path
+                {lowConfidenceTotal > 0 && ` · ${lowConfidenceTotal} low-confidence line${lowConfidenceTotal === 1 ? '' : 's'}`}
+                {flagsTotal > 0 && ` · ${flagsTotal} flag${flagsTotal === 1 ? '' : 's'}`}
+                . Correct lines below when needed — Analysis is optional for full detail.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+      {(workTab === 'exceptions' || (workTab === 'docs' && lowConfidenceTotal > 0)) && lowConfidenceTotal > 0 && (
+        <Suspense fallback={null}>
+          <ExceptionsQueue
+            requirements={requirements}
+            clientId={client.id}
+            bookkeeperId={bookkeeperId}
+          />
+        </Suspense>
+      )}
+      {workTab === 'exceptions' && lowConfidenceTotal === 0 && (
+        <p className="rounded-lg border border-gray-200 bg-white px-4 py-6 text-center text-sm text-gray-500">
+          No open low-confidence exceptions for this period. Upload bank/CC statements to generate line evidence.
+        </p>
+      )}
+      {workTab === 'docs' && requirements.map(req => {
         const hasUpload = req.uploads.length > 0
+        const latest = req.uploads[req.uploads.length - 1]
+        const lowConf = latest?.categorization_summary?.lowConfidence ?? 0
         return (
           <div
             key={req.id}
@@ -540,6 +883,16 @@ function DocumentsTab({
                 <p className="text-xs text-gray-500">
                   {req.required ? 'Required' : 'Optional'}
                   {req.doc_type !== 'other' && ` · ${formatDocType(req.doc_type)}`}
+                  {latest?.auto_categorized_at && (
+                    <>
+                      {' · '}
+                      <span className={lowConf > 0 ? 'text-amber-700' : 'text-emerald-700'}>
+                        {lowConf > 0
+                          ? `${lowConf} need review`
+                          : `categorized (${latest.auto_categorization_confidence ?? 'ok'})`}
+                      </span>
+                    </>
+                  )}
                 </p>
               </div>
             </div>
@@ -562,8 +915,8 @@ function DocumentsTab({
         )
       })}
 
-      {/* Private notes */}
-      {client.notes_private && (
+      {/* Private notes — docs tab only */}
+      {workTab === 'docs' && client.notes_private && (
         <div className="mt-6">
           <h3 className="mb-2 text-sm font-semibold text-gray-700">Private Notes</h3>
           <div className="rounded-lg border border-gray-200 bg-white p-4 text-sm text-gray-600">
@@ -572,7 +925,8 @@ function DocumentsTab({
         </div>
       )}
 
-      {/* Engagement Letters / E-Signatures */}
+      {/* Engagement Letters / E-Signatures — docs tab */}
+      {workTab === 'docs' && (
       <div className="mt-6 border-t border-gray-200 pt-6">
         <div className="mb-3 flex items-center justify-between">
           <h3 className="flex items-center gap-2 text-sm font-semibold text-gray-900">
@@ -646,6 +1000,7 @@ function DocumentsTab({
           </div>
         </div>
       </div>
+      )}
     </div>
   )
 }
@@ -671,10 +1026,12 @@ const ANALYSIS_SECTIONS: { id: AnalysisSection; label: string; icon: typeof File
 function AnalysisTab({
   requirements,
   client,
+  bookkeeperId,
   period,
   parsedStatements,
   onStatementsParsed,
   reconResult,
+  onSetReconResult,
   onRunReconciliation,
   insights,
   categorizationReport,
@@ -687,10 +1044,12 @@ function AnalysisTab({
 }: {
   requirements: RequirementWithUploads[]
   client: Client
+  bookkeeperId: string
   period: { year: number; month: number }
   parsedStatements: StatementSummary[]
   onStatementsParsed: (s: StatementSummary[]) => void
   reconResult: ReconciliationResult | null
+  onSetReconResult: (r: ReconciliationResult | null) => void
   onRunReconciliation: () => void
   insights: MonthlyInsights | null
   categorizationReport: CategorizationReport | null
@@ -702,7 +1061,41 @@ function AnalysisTab({
   onSetWorkflowResult: (r: WorkflowResult | null) => void
 }) {
   const [section, setSection] = useState<AnalysisSection>('parse')
+  const [workflowError, setWorkflowError] = useState<string | null>(null)
+  const [workflowRunning, setWorkflowRunning] = useState(false)
   const hasParsed = parsedStatements.length > 0
+
+  async function runMonthEndClose() {
+    setWorkflowRunning(true)
+    setWorkflowError(null)
+    try {
+      const { executeWorkflowById } = await import('@/lib/workflows/execute')
+      const outcome = executeWorkflowById('month-end-close-service', {
+        clientId: client.id,
+        clientName: client.business_name,
+        period,
+        statements: parsedStatements,
+        requirements,
+        reconResult,
+      })
+      if (!outcome.ok) {
+        setWorkflowError(outcome.error)
+        if (outcome.result) onSetWorkflowResult(outcome.result)
+        return
+      }
+      onSetWorkflowResult(outcome.result)
+      // Keep recon in parent when we can recompute
+      if (parsedStatements.length > 0) {
+        const reconMod = await import('@/lib/reconciliation')
+        const recon = reconMod.reconcileFromParsedStatements(parsedStatements, requirements)
+        if (recon) onSetReconResult(recon)
+      }
+    } catch (err) {
+      setWorkflowError(err instanceof Error ? err.message : 'Workflow failed')
+    } finally {
+      setWorkflowRunning(false)
+    }
+  }
 
   // NOTE: per Trust Ladder gating refactor (.claude/rules/ai-first-principles.md §3),
   // the "limited data" banner is no longer rendered at this level. Each engine panel
@@ -748,18 +1141,63 @@ function AnalysisTab({
         })}
       </div>
 
+      {/* G5 — Workflow library + live month-end close */}
+      <div className="rounded-lg border border-gray-200 bg-white p-4">
+        <Suspense fallback={<LoadingSpinner size="sm" />}>
+          <WorkflowLibraryPanel
+            category="close"
+            onRunWorkflow={async (w) => {
+              if (w.id === 'month-end-close-service') {
+                await runMonthEndClose()
+                return
+              }
+              setWorkflowError(`"${w.label}" is not live yet.`)
+            }}
+          />
+        </Suspense>
+        {workflowError && (
+          <p className="mt-3 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
+            {workflowError}
+          </p>
+        )}
+        {hasParsed && (
+          <button
+            type="button"
+            disabled={workflowRunning}
+            onClick={() => void runMonthEndClose()}
+            className="mt-3 flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-700 disabled:opacity-50"
+          >
+            <Zap className="h-4 w-4" />
+            {workflowRunning ? 'Running month-end close…' : 'Run month-end close (service)'}
+          </button>
+        )}
+      </div>
+
+      {/* Phase 4 — editable playbooks (allowlist composition) */}
+      <div className="rounded-lg border border-gray-200 bg-white p-4">
+        <Suspense fallback={<LoadingSpinner size="sm" />}>
+          <PlaybookEditorPanel
+            bookkeeperId={bookkeeperId}
+            clientId={client.id}
+            clientName={client.business_name}
+            period={period}
+            executeCtx={{
+              clientId: client.id,
+              clientName: client.business_name,
+              period,
+              statements: parsedStatements,
+              requirements,
+              reconResult,
+            }}
+            onResult={onSetWorkflowResult}
+            onError={setWorkflowError}
+          />
+        </Suspense>
+      </div>
+
       {/* Workflow Result Panel — executive summary */}
       {workflowResult && (
         <WorkflowResultPanel result={workflowResult} />
-      )}
-      {!workflowResult && hasParsed && (
-        <button
-          onClick={async () => { const m = await import('@/lib/workflow-engine'); onSetWorkflowResult(m.getDemoWorkflowResult()) }}
-          className="flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-700"
-        >
-          <Zap className="h-4 w-4" />
-          Run Full Pipeline
-        </button>
       )}
 
       {/* Prompt to parse first */}
@@ -973,6 +1411,11 @@ function ExportTab({
   parsedStatements,
   insights,
   bookkeeperName,
+  packageDraft,
+  onDownloadPackage,
+  onDownloadZip,
+  zipping,
+  plan,
   teamsCopied,
   onTeamsCopy,
 }: {
@@ -983,14 +1426,65 @@ function ExportTab({
   parsedStatements: StatementSummary[]
   insights: MonthlyInsights | null
   bookkeeperName: string
+  packageDraft: ReturnType<typeof evaluatePackageDraft>
+  onDownloadPackage: () => void
+  onDownloadZip: () => void
+  zipping: boolean
+  plan: string
   teamsCopied: boolean
   onTeamsCopy: () => void
 }) {
   const { isSolo: isBusinessOwnerMode } = useAccountType()
-  const report = runCompletenessChecks(requirements, parsedStatements)
+  const report = packageDraft.completeness
 
   return (
     <div className="space-y-4">
+      {/* Auto-draft status */}
+      <div
+        className={cn(
+          'rounded-lg border p-5',
+          packageDraft.status === 'ready_for_review'
+            ? 'border-emerald-200 bg-emerald-50'
+            : packageDraft.status === 'incomplete'
+              ? 'border-amber-200 bg-amber-50'
+              : 'border-gray-200 bg-white',
+        )}
+      >
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h4 className="text-sm font-semibold text-gray-900">
+              {packageDraft.status === 'ready_for_review' ? 'Package ready for review' : 'Month package draft'}
+            </h4>
+            <p className="mt-0.5 text-xs text-gray-600">{packageDraft.label}</p>
+            <p className="mt-1 text-xs text-gray-500">
+              Completeness {report.score}/100 · auto-drafted when required documents pass checks (no Analysis click required).
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={onDownloadPackage}
+              disabled={!packageDraft.canDownloadPackage}
+              className="flex items-center gap-1.5 rounded-md bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-light disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <Package className="h-4 w-4" />
+              {packageDraft.canDownloadPackage ? 'Download package' : 'Generate (blocked)'}
+            </button>
+            {tenantConfig.features.zipDownload && (plan === 'starter' || plan === 'pro') && (
+              <button
+                type="button"
+                onClick={onDownloadZip}
+                disabled={!packageDraft.canDownloadZip || zipping}
+                className="flex items-center gap-1.5 rounded-md border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+              >
+                {zipping ? <Loader2 className="h-4 w-4 animate-spin" /> : <Archive className="h-4 w-4" />}
+                ZIP sources
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+
       {/* Client Monthly Report (insights-based) */}
       {insights && (
         <div className="rounded-lg border border-primary/20 bg-primary/5 p-5">
@@ -1012,7 +1506,7 @@ function ExportTab({
         </div>
       )}
 
-      {/* Bookkeeper Package */}
+      {/* Bookkeeper Package (manual re-download) */}
       <div className="rounded-lg border border-gray-200 bg-white p-5">
         <div className="flex items-center justify-between">
           <div>
@@ -1020,26 +1514,17 @@ function ExportTab({
               {isBusinessOwnerMode ? 'Package for Bookkeeper' : 'Bookkeeper Package'}
             </h4>
             <p className="mt-0.5 text-xs text-gray-500">
-              Downloadable HTML report with reconciliation, missing docs, completeness score.
+              HTML report with completeness score, checklist, and optional reconciliation.
+              {reconResult ? ' Reconciliation data included when available.' : ' Run Analysis → reconciliation to enrich the report.'}
             </p>
           </div>
           <button
-            onClick={async () => {
-              const m = await import('@/lib/finance-prep')
-              m.generateBookkeeperPackage({
-                businessName: client.business_name,
-                contactName: client.contact_name ?? '',
-                year: period.year,
-                month: period.month,
-                requirements,
-                completeness: report,
-                reconciliation: reconResult ?? undefined,
-              })
-            }}
-            className="flex items-center gap-1.5 rounded-md bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-light"
+            onClick={onDownloadPackage}
+            disabled={!packageDraft.canDownloadPackage}
+            className="flex items-center gap-1.5 rounded-md bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-light disabled:cursor-not-allowed disabled:opacity-50"
           >
             <Package className="h-4 w-4" />
-            Generate
+            {packageDraft.canDownloadPackage ? 'Download' : 'Blocked'}
           </button>
         </div>
       </div>

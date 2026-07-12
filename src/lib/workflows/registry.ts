@@ -69,7 +69,7 @@ export const WORKFLOWS: WorkflowDef[] = [
     unlocksAt: 0,
     unlockHint: 'Works from day one. Improves with each correction you make (Loop 2+).',
     buildEffortDays: 2,
-    status: 'stub',
+    status: 'live',
   },
   {
     id: 'month-end-close-retail',

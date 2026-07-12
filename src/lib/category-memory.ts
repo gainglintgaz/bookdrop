@@ -1,160 +1,139 @@
-// src/lib/category-memory.ts
-// Category learning/memory system that remembers user corrections to auto-categorization.
-// When a user re-categorizes a transaction, the system learns that vendor → category
-// mapping for next time. Runs entirely in the browser via localStorage.
+// category-memory.ts — Phase 5: per-client learned category map.
+// Corrections scope to client_id so Client A's Starbucks → Meals never
+// bleeds into Client B. Applied on next upload via auto-categorize-upload.
 //
-// Integrates with categorization-engine.ts — after auto-categorization runs,
-// call getLearnedCategory() to override any auto-categorized results with
-// user-corrected mappings.
+// Storage: localStorage (demo + browser learning). Cloud corrections also
+// go to categorization_corrections table via separate helper.
 
-// ─── CONSTANTS ───────────────────────────────────────────────────────────────
+const STORAGE_KEY = 'bookdrop_category_memory_v2'
+const LEGACY_STORAGE_KEY = 'bookdrop_category_memory'
+const MAX_CORRECTIONS_PER_CLIENT = 500
+const CURRENT_VERSION = 2
 
-const STORAGE_KEY = 'bookdrop_category_memory'
-const MAX_CORRECTIONS = 500
-const CURRENT_VERSION = 1
-
-// Common prefixes on bank statement descriptions that should be stripped
-// during normalization so "POS STARBUCKS" and "STARBUCKS" match the same vendor.
 const STRIP_PREFIXES = [
-  'pos',
-  'ach',
-  'eft',
-  'dbt',
-  'pmt',
-  'chk',
-  'wire',
-  'debit',
-  'credit',
-  'purchase',
-  'payment',
-  'withdrawal',
-  'deposit',
-  'transfer',
-  'recurring',
-  'autopay',
-  'online',
-  'mobile',
-  'card',
-  'visa',
-  'mc',
-  'mastercard',
-  'amex',
-  'check',
-  'sq',       // Square POS
-  'tst',      // Toast POS
-  'pp',       // PayPal prefix
-  'paypal',
+  'pos', 'ach', 'eft', 'dbt', 'pmt', 'chk', 'wire', 'debit', 'credit',
+  'purchase', 'payment', 'withdrawal', 'deposit', 'transfer', 'recurring',
+  'autopay', 'online', 'mobile', 'card', 'visa', 'mc', 'mastercard', 'amex',
+  'check', 'sq', 'tst', 'pp', 'paypal',
 ]
 
-// ─── TYPES ───────────────────────────────────────────────────────────────────
-
 export interface CategoryCorrection {
-  vendorPattern: string       // normalized vendor name
+  vendorPattern: string
   originalCategory: string
   correctedCategory: string
   correctedSubcategory: string
-  correctedAt: string         // ISO date
-  confidence: number          // increases each time same correction is made, starts at 1
+  correctedAt: string
+  confidence: number
+  clientId: string
 }
 
-export interface CategoryMemory {
-  corrections: CategoryCorrection[]
+interface MemoryStore {
   version: number
   lastUpdated: string
+  /** clientId → corrections for that client only */
+  byClient: Record<string, CategoryCorrection[]>
 }
 
-// ─── NORMALIZATION ───────────────────────────────────────────────────────────
+// ─── Normalization ───────────────────────────────────────────────────────────
 
-/**
- * Normalize a vendor description for consistent matching.
- * - lowercases everything
- * - strips digits (card numbers, transaction IDs, dates, amounts)
- * - strips common POS/ACH/etc. prefixes
- * - collapses whitespace and trims
- */
-function normalizeVendor(description: string): string {
+export function normalizeVendor(description: string): string {
   let normalized = description.toLowerCase()
-
-  // Strip digits (card numbers, transaction codes, dates, amounts)
   normalized = normalized.replace(/\d+/g, '')
-
-  // Strip common punctuation that varies between banks
   normalized = normalized.replace(/[*#@/\\.,;:(){}[\]"'`~!$%^&+=|<>?_-]/g, ' ')
-
-  // Split into words so we can remove prefix tokens
   const words = normalized.split(/\s+/).filter(Boolean)
-
-  // Remove leading words that match known noise prefixes
   while (words.length > 1 && STRIP_PREFIXES.includes(words[0])) {
     words.shift()
   }
-
   return words.join(' ').trim()
 }
 
-// ─── STORAGE HELPERS ─────────────────────────────────────────────────────────
+// ─── Storage ─────────────────────────────────────────────────────────────────
 
-function loadMemory(): CategoryMemory {
+function emptyStore(): MemoryStore {
+  return { version: CURRENT_VERSION, lastUpdated: new Date().toISOString(), byClient: {} }
+}
+
+function hasLocalStorage(): boolean {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    if (!raw) {
-      return { corrections: [], version: CURRENT_VERSION, lastUpdated: new Date().toISOString() }
-    }
-    const parsed: CategoryMemory = JSON.parse(raw)
-    // Future-proof: handle version migrations here if version changes
-    if (!parsed.corrections || !Array.isArray(parsed.corrections)) {
-      return { corrections: [], version: CURRENT_VERSION, lastUpdated: new Date().toISOString() }
-    }
-    return parsed
-  } catch (error) {
-    console.warn('[category-memory] Failed to load category memory from localStorage — returning empty memory.', error)
-    return { corrections: [], version: CURRENT_VERSION, lastUpdated: new Date().toISOString() }
+    return typeof localStorage !== 'undefined' && localStorage !== null
+  } catch {
+    return false
   }
 }
 
-function saveMemory(memory: CategoryMemory): void {
-  memory.lastUpdated = new Date().toISOString()
-  memory.version = CURRENT_VERSION
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(memory))
+/** In-memory fallback for Vitest / SSR. */
+let memoryStore: MemoryStore = emptyStore()
+
+function loadStore(): MemoryStore {
+  if (!hasLocalStorage()) return structuredCloneSafe(memoryStore)
+
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY)
+    if (raw) {
+      const parsed = JSON.parse(raw) as MemoryStore
+      if (parsed?.byClient && typeof parsed.byClient === 'object') {
+        return parsed
+      }
+    }
+    // One-time migrate legacy global (no client scope) → discard into empty
+    // rather than invent a fake client. Old data was not per-client honest.
+    const legacy = localStorage.getItem(LEGACY_STORAGE_KEY)
+    if (legacy) {
+      console.info(
+        '[category-memory] Legacy global memory ignored — Phase 5 is per-client only. Make new corrections to re-teach.',
+      )
+    }
+  } catch (error) {
+    console.warn('[category-memory] load failed:', error)
+  }
+  return emptyStore()
 }
 
-// ─── PUBLIC API ──────────────────────────────────────────────────────────────
+function structuredCloneSafe(store: MemoryStore): MemoryStore {
+  return JSON.parse(JSON.stringify(store)) as MemoryStore
+}
+
+function saveStore(store: MemoryStore): void {
+  store.lastUpdated = new Date().toISOString()
+  store.version = CURRENT_VERSION
+  memoryStore = structuredCloneSafe(store)
+  if (!hasLocalStorage()) return
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(store))
+  } catch {
+    /* quota */
+  }
+}
+
+// ─── Public API ──────────────────────────────────────────────────────────────
 
 /**
- * Save a correction — the user recategorized a transaction.
- *
- * If the same normalized vendor already has a correction:
- *   - Same category+subcategory → bump confidence
- *   - Different category → replace with the new one (latest wins), reset confidence to 1
- *
- * Evicts the oldest corrections when the list exceeds MAX_CORRECTIONS.
+ * Record a bookkeeper/client correction for THIS client only.
  */
 export function recordCorrection(
+  clientId: string,
   vendorDescription: string,
   originalCategory: string,
   newCategory: string,
   newSubcategory?: string,
 ): void {
-  const memory = loadMemory()
+  if (!clientId) return
+  const store = loadStore()
   const pattern = normalizeVendor(vendorDescription)
+  if (!pattern) return
 
-  if (!pattern) return // nothing useful to learn from empty descriptions
-
-  const existingIndex = memory.corrections.findIndex(
-    (c) => c.vendorPattern === pattern,
-  )
+  const list = store.byClient[clientId] ?? []
+  const existingIndex = list.findIndex(c => c.vendorPattern === pattern)
 
   if (existingIndex >= 0) {
-    const existing = memory.corrections[existingIndex]
+    const existing = list[existingIndex]
     if (
       existing.correctedCategory === newCategory &&
       existing.correctedSubcategory === (newSubcategory ?? '')
     ) {
-      // Same correction again — increase confidence
       existing.confidence += 1
       existing.correctedAt = new Date().toISOString()
     } else {
-      // Different correction — latest wins, reset confidence
       existing.correctedCategory = newCategory
       existing.correctedSubcategory = newSubcategory ?? ''
       existing.originalCategory = originalCategory
@@ -162,47 +141,42 @@ export function recordCorrection(
       existing.confidence = 1
     }
   } else {
-    memory.corrections.push({
+    list.push({
       vendorPattern: pattern,
       originalCategory,
       correctedCategory: newCategory,
       correctedSubcategory: newSubcategory ?? '',
       correctedAt: new Date().toISOString(),
       confidence: 1,
+      clientId,
     })
   }
 
-  // Evict oldest corrections if over the limit
-  if (memory.corrections.length > MAX_CORRECTIONS) {
-    // Sort by correctedAt ascending so oldest are first, then slice off the excess
-    memory.corrections.sort(
-      (a, b) => new Date(a.correctedAt).getTime() - new Date(b.correctedAt).getTime(),
-    )
-    memory.corrections = memory.corrections.slice(memory.corrections.length - MAX_CORRECTIONS)
+  if (list.length > MAX_CORRECTIONS_PER_CLIENT) {
+    list.sort((a, b) => new Date(a.correctedAt).getTime() - new Date(b.correctedAt).getTime())
+    store.byClient[clientId] = list.slice(list.length - MAX_CORRECTIONS_PER_CLIENT)
+  } else {
+    store.byClient[clientId] = list
   }
 
-  saveMemory(memory)
+  saveStore(store)
 }
 
 /**
- * Look up whether we have a learned category for the given vendor description.
- * Uses the same normalization and does substring matching — if the normalized
- * query is a substring of a stored pattern or vice versa, it counts as a match.
- * Prefers exact matches over substring matches; among substring matches, prefers
- * the one with highest confidence.
+ * Look up learned category for this client + vendor.
+ * Never returns another client's mapping.
  */
-export function getLearnedCategory(vendorDescription: string): {
-  category: string
-  subcategory: string
-  confidence: number
-} | null {
-  const memory = loadMemory()
+export function getLearnedCategory(
+  clientId: string,
+  vendorDescription: string,
+): { category: string; subcategory: string; confidence: number } | null {
+  if (!clientId) return null
+  const store = loadStore()
+  const corrections = store.byClient[clientId] ?? []
   const query = normalizeVendor(vendorDescription)
+  if (!query || corrections.length === 0) return null
 
-  if (!query || memory.corrections.length === 0) return null
-
-  // Try exact match first
-  const exact = memory.corrections.find((c) => c.vendorPattern === query)
+  const exact = corrections.find(c => c.vendorPattern === query)
   if (exact) {
     return {
       category: exact.correctedCategory,
@@ -211,145 +185,75 @@ export function getLearnedCategory(vendorDescription: string): {
     }
   }
 
-  // Substring matching: query contains pattern or pattern contains query
-  let bestMatch: CategoryCorrection | null = null
-
-  for (const correction of memory.corrections) {
+  let best: CategoryCorrection | null = null
+  for (const correction of corrections) {
     const isSubstring =
       query.includes(correction.vendorPattern) ||
       correction.vendorPattern.includes(query)
-
-    if (isSubstring) {
-      if (!bestMatch || correction.confidence > bestMatch.confidence) {
-        bestMatch = correction
-      }
+    if (isSubstring && (!best || correction.confidence > best.confidence)) {
+      best = correction
     }
   }
 
-  if (bestMatch) {
-    return {
-      category: bestMatch.correctedCategory,
-      subcategory: bestMatch.correctedSubcategory,
-      confidence: bestMatch.confidence,
-    }
+  if (!best) return null
+  return {
+    category: best.correctedCategory,
+    subcategory: best.correctedSubcategory,
+    confidence: best.confidence,
   }
-
-  return null
 }
 
-/**
- * Get all corrections, sorted by most recent first.
- */
-export function getAllCorrections(): CategoryCorrection[] {
-  const memory = loadMemory()
-  return [...memory.corrections].sort(
+export function getClientCorrections(clientId: string): CategoryCorrection[] {
+  const store = loadStore()
+  const list = store.byClient[clientId] ?? []
+  return [...list].sort(
     (a, b) => new Date(b.correctedAt).getTime() - new Date(a.correctedAt).getTime(),
   )
 }
 
-/**
- * Delete a specific correction by its normalized vendor pattern.
- */
-export function deleteCorrection(vendorPattern: string): void {
-  const memory = loadMemory()
-  memory.corrections = memory.corrections.filter(
-    (c) => c.vendorPattern !== vendorPattern,
+export function getAllCorrections(clientId?: string): CategoryCorrection[] {
+  if (clientId) return getClientCorrections(clientId)
+  const store = loadStore()
+  const all: CategoryCorrection[] = []
+  for (const list of Object.values(store.byClient)) {
+    all.push(...list)
+  }
+  return all.sort(
+    (a, b) => new Date(b.correctedAt).getTime() - new Date(a.correctedAt).getTime(),
   )
-  saveMemory(memory)
 }
 
-/**
- * Clear all learned categories.
- */
+export function deleteCorrection(clientId: string, vendorPattern: string): void {
+  const store = loadStore()
+  const list = store.byClient[clientId] ?? []
+  store.byClient[clientId] = list.filter(c => c.vendorPattern !== vendorPattern)
+  saveStore(store)
+}
+
+export function clearClientCorrections(clientId: string): void {
+  const store = loadStore()
+  delete store.byClient[clientId]
+  saveStore(store)
+}
+
 export function clearAllCorrections(): void {
-  saveMemory({ corrections: [], version: CURRENT_VERSION, lastUpdated: new Date().toISOString() })
+  saveStore(emptyStore())
 }
 
-/**
- * Export corrections as a JSON string for backup or transfer between devices.
- */
-export function exportCorrections(): string {
-  const memory = loadMemory()
-  return JSON.stringify(memory, null, 2)
-}
-
-/**
- * Import corrections from a JSON string. Merges with existing corrections —
- * if the same vendor pattern exists, keeps the one with higher confidence.
- * Returns the number of corrections imported (new or updated).
- */
-export function importCorrections(json: string): number {
-  let imported: CategoryMemory
-  try {
-    imported = JSON.parse(json)
-  } catch {
-    throw new Error('Invalid JSON: could not parse category corrections file')
-  }
-
-  if (!imported.corrections || !Array.isArray(imported.corrections)) {
-    throw new Error('Invalid format: expected a CategoryMemory object with a corrections array')
-  }
-
-  const memory = loadMemory()
-  let count = 0
-
-  for (const incoming of imported.corrections) {
-    // Validate required fields
-    if (!incoming.vendorPattern || !incoming.correctedCategory) continue
-
-    const existingIndex = memory.corrections.findIndex(
-      (c) => c.vendorPattern === incoming.vendorPattern,
-    )
-
-    if (existingIndex >= 0) {
-      // Keep whichever has higher confidence
-      if (incoming.confidence > memory.corrections[existingIndex].confidence) {
-        memory.corrections[existingIndex] = {
-          vendorPattern: incoming.vendorPattern,
-          originalCategory: incoming.originalCategory ?? '',
-          correctedCategory: incoming.correctedCategory,
-          correctedSubcategory: incoming.correctedSubcategory ?? '',
-          correctedAt: incoming.correctedAt ?? new Date().toISOString(),
-          confidence: incoming.confidence ?? 1,
-        }
-        count++
-      }
-    } else {
-      memory.corrections.push({
-        vendorPattern: incoming.vendorPattern,
-        originalCategory: incoming.originalCategory ?? '',
-        correctedCategory: incoming.correctedCategory,
-        correctedSubcategory: incoming.correctedSubcategory ?? '',
-        correctedAt: incoming.correctedAt ?? new Date().toISOString(),
-        confidence: incoming.confidence ?? 1,
-      })
-      count++
-    }
-  }
-
-  // Enforce max corrections after import
-  if (memory.corrections.length > MAX_CORRECTIONS) {
-    memory.corrections.sort(
-      (a, b) => new Date(a.correctedAt).getTime() - new Date(b.correctedAt).getTime(),
-    )
-    memory.corrections = memory.corrections.slice(memory.corrections.length - MAX_CORRECTIONS)
-  }
-
-  saveMemory(memory)
-  return count
-}
-
-/**
- * Get stats about the learning system.
- */
-export function getLearningStats(): {
+export function getLearningStats(clientId?: string): {
   totalCorrections: number
   uniqueVendors: number
   mostCorrectedCategory: string | null
   accuracyImprovement: number
+  clientCount: number
 } {
-  const memory = loadMemory()
-  const corrections = memory.corrections
+  const corrections = clientId
+    ? getClientCorrections(clientId)
+    : getAllCorrections()
+  const store = loadStore()
+  const clientCount = Object.keys(store.byClient).filter(
+    id => (store.byClient[id]?.length ?? 0) > 0,
+  ).length
 
   if (corrections.length === 0) {
     return {
@@ -357,13 +261,11 @@ export function getLearningStats(): {
       uniqueVendors: 0,
       mostCorrectedCategory: null,
       accuracyImprovement: 0,
+      clientCount,
     }
   }
 
-  // Unique vendors = unique patterns (already deduplicated in storage, so just count)
-  const uniqueVendors = new Set(corrections.map((c) => c.vendorPattern)).size
-
-  // Most corrected-to category (which category do users correct TO the most)
+  const uniqueVendors = new Set(corrections.map(c => c.vendorPattern)).size
   const categoryCounts = new Map<string, number>()
   for (const c of corrections) {
     categoryCounts.set(
@@ -379,11 +281,7 @@ export function getLearningStats(): {
       mostCorrectedCategory = cat
     }
   })
-
-  // Accuracy improvement estimate:
-  // corrections with confidence > 1 means the system has learned and would
-  // now auto-apply the correct category. Ratio of those to total corrections.
-  const learnedCount = corrections.filter((c) => c.confidence > 1).length
+  const learnedCount = corrections.filter(c => c.confidence > 1).length
   const accuracyImprovement =
     corrections.length > 0
       ? Math.round((learnedCount / corrections.length) * 100)
@@ -394,5 +292,18 @@ export function getLearningStats(): {
     uniqueVendors,
     mostCorrectedCategory,
     accuracyImprovement,
+    clientCount,
+  }
+}
+
+/** Test helper. */
+export function __resetCategoryMemoryStore(): void {
+  memoryStore = emptyStore()
+  if (!hasLocalStorage()) return
+  try {
+    localStorage.removeItem(STORAGE_KEY)
+    localStorage.removeItem(LEGACY_STORAGE_KEY)
+  } catch {
+    /* ignore */
   }
 }

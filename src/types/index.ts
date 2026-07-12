@@ -57,6 +57,8 @@ export interface Client {
   notes_for_client: string | null
   is_active: boolean
   created_at: string
+  /** Migration 009 — portal confirm policy (per-client, not one-size-fits-all). */
+  confirm_policy?: 'off' | 'low_confidence' | 'all_lines'
 }
 
 export interface DocumentRequirement {
@@ -108,12 +110,75 @@ export interface UploadCategorizationSummary {
   flagsCount: number
 }
 
+/** Migration 009 — line-level truth (auditable). Money in cents. */
+export type LineSourceKind =
+  | 'statement_parse'
+  | 'pdf_parse'
+  | 'csv_import'
+  | 'manual'
+  | 'ai_suggested'
+  | 'correction'
+  | 'rule'
+
+export type LineConfirmActor = 'client_portal' | 'bookkeeper'
+
+export interface DocumentLineItem {
+  id: string
+  upload_id: string
+  client_id: string
+  bookkeeper_id: string
+  line_index: number
+  txn_date: string | null
+  description_raw: string
+  description_display: string
+  amount_cents: number
+  amount_sign: 'credit' | 'debit'
+  suggested_category: string | null
+  suggested_subcategory: string | null
+  confidence: 'high' | 'medium' | 'low' | null
+  matched_vendor: string | null
+  final_category: string | null
+  final_subcategory: string | null
+  confirmed_by: LineConfirmActor | null
+  confirmed_at: string | null
+  source_kind: LineSourceKind
+  source_rule: string | null
+  content_hash: string | null
+  engine_version: string | null
+  created_at: string
+}
+
+/** Append-only portal/bookkeeper line action (migration 009). */
+export type PortalLineEventType =
+  | 'view_confirm_ui'
+  | 'accept'
+  | 'change'
+  | 'reject_file'
+  | 'bookkeeper_correct'
+
+export interface PortalLineEvent {
+  id: string
+  line_id: string | null
+  upload_id: string
+  client_id: string
+  bookkeeper_id: string
+  event_type: PortalLineEventType
+  before_category: string | null
+  after_category: string | null
+  portal_token_fingerprint: string
+  recorded_at: string
+  meta: Record<string, unknown>
+}
+
 /** Migration 004 — Phase A flywheel: per-correction record. */
 export interface CategorizationCorrection {
   id: string
   bookkeeper_id: string
   client_id: string
   upload_id: string | null
+  line_id?: string | null
+  actor?: 'bookkeeper' | 'client_portal' | null
+  portal_token_fingerprint?: string | null
   transaction_date: string | null
   transaction_amount_cents: number | null
   vendor_normalized: string | null
