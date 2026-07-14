@@ -4,6 +4,7 @@
 // Auth: Bearer CRON_SECRET. Never posts to GL.
 
 import type { VercelRequest, VercelResponse } from '@vercel/node'
+import { hasSupabaseAdminConfig } from '../_lib/supabase.js'
 import { executePrepCandidate, scanPrepCandidates } from '../_lib/prep-scan.js'
 import { notifyBookkeepersOfPrepRuns } from '../_lib/prep-notify.js'
 
@@ -14,7 +15,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   const secret = process.env.CRON_SECRET
   const auth = req.headers.authorization ?? ''
-  if (!secret || auth !== `Bearer ${secret}`) {
+  // Missing secret → 500 with clear message (not a crash). Wrong secret → 401.
+  if (!secret) {
+    return res.status(500).json({ error: 'CRON_SECRET not configured' })
+  }
+  if (auth !== `Bearer ${secret}`) {
     return res.status(401).json({ error: 'Unauthorized' })
   }
 
@@ -22,11 +27,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const dryRun = req.method === 'GET' || body.dryRun !== false
   const notify = body.notify !== false
 
-  const hasService =
-    !!(process.env.SUPABASE_SERVICE_ROLE_KEY &&
-      (process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL))
-
-  if (!hasService) {
+  if (!hasSupabaseAdminConfig()) {
     return res.status(200).json({
       ok: true,
       dryRun: true,
