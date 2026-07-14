@@ -148,100 +148,26 @@ async function extractPDFLines(file: File): Promise<{ lines: string[]; pageCount
 
 // ─── CSV IMPORT (bank exports — most reliable path) ──────────────────────
 
-/** Parse a CSV bank/credit card export file */
+/** Parse a CSV bank/credit card export file (browser File wrapper over pure parser). */
 export async function parseCSVStatement(file: File): Promise<StatementSummary> {
+  const { parseCSVText } = await import('./parse-csv-statement')
   const text = await file.text()
-  const lines = text.split(/\r?\n/).filter(line => line.trim().length > 0)
-
-  if (lines.length < 2) {
-    return emptyStatementSummary('bank', 0)
-  }
-
-  // Detect header row
-  const headerLine = lines[0].toLowerCase()
-  const hasHeader = headerLine.includes('date') || headerLine.includes('description') || headerLine.includes('amount')
-  const dataLines = hasHeader ? lines.slice(1) : lines
-
-  const transactions: ParsedTransaction[] = []
-
-  for (const line of dataLines) {
-    const fields = parseCSVLine(line)
-    if (fields.length < 2) continue
-
-    // Try to detect date, description, and amount columns by content
-    const dateIdx = fields.findIndex(f => DATE_PATTERN.test(f.trim()) || /^\d{4}-\d{2}-\d{2}/.test(f.trim()))
-    if (dateIdx === -1) continue
-
-    const amountFields = fields
-      .map((f, i) => ({ idx: i, val: f.trim().replace(/[$,]/g, '').replace('−', '-') }))
-      .filter(f => f.idx !== dateIdx && /^-?\d+(\.\d{2})?$/.test(f.val))
-
-    if (amountFields.length === 0) continue
-
-    // Description is the first non-date, non-amount text field
-    const descIdx = fields.findIndex((f, i) =>
-      i !== dateIdx &&
-      !amountFields.some(a => a.idx === i) &&
-      f.trim().length > 0 &&
-      !/^\d+(\.\d{2})?$/.test(f.trim().replace(/[$,]/g, ''))
-    )
-
-    const date = fields[dateIdx].trim()
-    const description = descIdx >= 0 ? fields[descIdx].trim() : ''
-    const amount = parseFloat(amountFields[0].val)
-
-    if (isNaN(amount)) continue
-
-    transactions.push({
-      date,
-      description,
-      amount,
-      category: categorizeVendor(description),
-      raw: line,
-    })
-  }
-
-  const totalDebits = transactions.filter(t => t.amount < 0).reduce((s, t) => s + Math.abs(t.amount), 0)
-  const totalCredits = transactions.filter(t => t.amount > 0).reduce((s, t) => s + t.amount, 0)
-  const dates = transactions.map(t => t.date).filter(Boolean)
-
+  const csv = parseCSVText(text)
   return {
     statementType: 'bank',
-    transactions,
-    startDate: dates[0] ?? null,
-    endDate: dates[dates.length - 1] ?? null,
-    openingBalance: null,
-    closingBalance: null,
-    totalDebits: round2(totalDebits),
-    totalCredits: round2(totalCredits),
-    pageCount: 0,
-    bankName: null,
+    transactions: csv.transactions.map(t => ({
+      ...t,
+      category: t.category ?? categorizeVendor(t.description),
+    })),
+    startDate: csv.startDate,
+    endDate: csv.endDate,
+    openingBalance: csv.openingBalance,
+    closingBalance: csv.closingBalance,
+    totalDebits: csv.totalDebits,
+    totalCredits: csv.totalCredits,
+    pageCount: csv.pageCount,
+    bankName: csv.bankName,
   }
-}
-
-function parseCSVLine(line: string): string[] {
-  const fields: string[] = []
-  let current = ''
-  let inQuotes = false
-
-  for (let i = 0; i < line.length; i++) {
-    const ch = line[i]
-    if (ch === '"') {
-      if (inQuotes && line[i + 1] === '"') {
-        current += '"'
-        i++
-      } else {
-        inQuotes = !inQuotes
-      }
-    } else if (ch === ',' && !inQuotes) {
-      fields.push(current)
-      current = ''
-    } else {
-      current += ch
-    }
-  }
-  fields.push(current)
-  return fields
 }
 
 // ─── MAIN PARSER (auto-detects statement type) ───────────────────────────
