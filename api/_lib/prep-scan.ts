@@ -1,6 +1,6 @@
 // api/_lib/prep-scan.ts — server-side close-prep candidate scan + execute.
-// Storage CSV parse → extract/categorize/audit when possible.
-// Completeness always runs. Never invents PDF bank lines. Human package gate remains.
+// Storage CSV + PDF text parse → extract/categorize/audit when possible.
+// Completeness always runs. Image-only PDFs yield 0 lines (honest). Human package gate remains.
 
 import { supabaseAdmin } from './supabase.js'
 import {
@@ -213,10 +213,10 @@ function completenessSteps(candidate: PrepCandidate): Array<{
 
 /**
  * Execute prep for one candidate:
- * 1) Try storage CSV parse for bank/CC files
+ * 1) Try storage CSV + PDF text parse for bank/CC files
  * 2) If transactions → extract/categorize/audit
  * 3) Always completeness + package
- * 4) Optionally enrich upload rows with parsed_summary when CSV parse succeeded
+ * 4) Enrich upload rows with parsed_summary when parse produced transactions
  */
 export async function executePrepCandidate(
   candidate: PrepCandidate,
@@ -228,7 +228,8 @@ export async function executePrepCandidate(
   runId?: string
   txnCount: number
   csvParsed: number
-  pdfSkipped: number
+  pdfParsed: number
+  pdfEmpty: number
 }> {
   const started = new Date().toISOString()
   const alerts: string[] = []
@@ -258,27 +259,31 @@ export async function executePrepCandidate(
 
   let txnCount = 0
   let csvParsed = 0
-  let pdfSkipped = 0
+  let pdfParsed = 0
+  let pdfEmpty = 0
 
   if (parseRows.length > 0) {
     const parses = await parseClientUploadsFromStorage(parseRows)
     csvParsed = parses.filter(p => p.parseKind === 'csv').length
-    pdfSkipped = parses.filter(p => p.parseKind === 'skipped_pdf').length
+    const pdfRows = parses.filter(p => p.parseKind === 'pdf')
+    pdfParsed = pdfRows.filter(p => p.summary.transactions.length > 0).length
+    pdfEmpty = pdfRows.filter(p => p.summary.transactions.length === 0).length
     const failed = parses.filter(p => p.parseKind === 'failed')
+    const skipped = parses.filter(p => p.parseKind === 'skipped')
 
     steps.push({
-      name: 'Storage parse (CSV)',
-      status: failed.length === parseRows.length ? 'failed' : 'complete',
+      name: 'Storage parse (CSV + PDF text)',
+      status: failed.length === parseRows.length && parseRows.length > 0 ? 'failed' : 'complete',
       durationMs: 0,
-      resultSummary: `CSV ok=${csvParsed} · PDF skipped=${pdfSkipped} · failed=${failed.length}`,
+      resultSummary: `CSV ok=${csvParsed} · PDF with lines=${pdfParsed} · PDF empty=${pdfEmpty} · failed=${failed.length} · skipped=${skipped.length}`,
     })
 
     if (failed.length > 0) {
       alerts.push(`${failed.length} storage download/parse failure(s)`)
     }
-    if (pdfSkipped > 0) {
+    if (pdfEmpty > 0) {
       alerts.push(
-        `${pdfSkipped} PDF(s) not parsed server-side — bookkeeper can parse on Period Desk → Power tools`,
+        `${pdfEmpty} PDF(s) had no extractable bank lines (scan/image?) — open Period Desk → Power tools for browser OCR`,
       )
     }
 
@@ -299,8 +304,12 @@ export async function executePrepCandidate(
       steps.push(...pipeline.steps)
       alerts.push(...pipeline.alerts)
 
-      // Persist parse artifacts on successfully parsed CSV uploads (real data only)
-      for (const p of parses.filter(x => x.parseKind === 'csv' && x.summary.transactions.length > 0)) {
+      // Persist parse artifacts on successful CSV/PDF parses (real data only)
+      for (const p of parses.filter(
+        x =>
+          (x.parseKind === 'csv' || x.parseKind === 'pdf') &&
+          x.summary.transactions.length > 0,
+      )) {
         const total = p.summary.transactions.length
         const parsed_summary = {
           bankName: p.summary.bankName,
@@ -310,6 +319,7 @@ export async function executePrepCandidate(
           totalCredits: p.summary.totalCredits,
           totalDebits: p.summary.totalDebits,
           transactionCount: total,
+          source: p.parseKind,
         }
         const categorization_summary = {
           totalCategorized: total,
@@ -344,12 +354,12 @@ export async function executePrepCandidate(
         name: 'Extract & map transactions',
         status: 'skipped',
         durationMs: 0,
-        resultSummary: 'No CSV transactions extracted (PDF-only or empty files)',
+        resultSummary: 'No transactions extracted from storage files',
       })
     }
   } else {
     steps.push({
-      name: 'Storage parse (CSV)',
+      name: 'Storage parse (CSV + PDF text)',
       status: 'skipped',
       durationMs: 0,
       resultSummary: 'No bank/credit-card uploads to parse',
@@ -392,7 +402,7 @@ export async function executePrepCandidate(
     started_at: started,
     completed_at: completed,
     alerts,
-    engine_version: 'prep-agent-v1.2-storage',
+    engine_version: 'prep-agent-v1.3-storage-pdf',
     readiness_score: readiness,
   })
 
@@ -403,7 +413,8 @@ export async function executePrepCandidate(
       message: `Audit write failed: ${error.message}`,
       txnCount,
       csvParsed,
-      pdfSkipped,
+      pdfParsed,
+      pdfEmpty,
     }
   }
 
@@ -411,14 +422,15 @@ export async function executePrepCandidate(
     status,
     message:
       txnCount > 0
-        ? `Prep complete with ${txnCount} transactions from storage CSV · human package approve still required`
+        ? `Prep complete with ${txnCount} transactions from storage (CSV/PDF text) · human package approve still required`
         : ready
-          ? 'Completeness OK · no server CSV transactions (PDF may need browser parse) · human approve still required'
+          ? 'Completeness OK · no server transactions (image PDF may need browser OCR) · human approve still required'
           : 'Completeness incomplete · chase remaining docs',
     runId,
     txnCount,
     csvParsed,
-    pdfSkipped,
+    pdfParsed,
+    pdfEmpty,
   }
 }
 

@@ -59,6 +59,7 @@ const WorkflowLibraryPanel = lazy(() => import('@/components/practitioner/Workfl
 const PlaybookEditorPanel = lazy(() => import('@/components/practitioner/PlaybookEditorPanel').then(m => ({ default: m.PlaybookEditorPanel })))
 const ExceptionsQueue = lazy(() => import('@/components/practitioner/ExceptionsQueue').then(m => ({ default: m.ExceptionsQueue })))
 const ClientConfirmProofStrip = lazy(() => import('@/components/practitioner/ClientConfirmProofStrip').then(m => ({ default: m.ClientConfirmProofStrip })))
+const PrepRunsInbox = lazy(() => import('@/components/practitioner/PrepRunsInbox').then(m => ({ default: m.PrepRunsInbox })))
 import { checkAndFireTrigger, TRIGGER_FIRST_ZIP, TRIGGER_FIRST_REMINDER } from '@/lib/engagement-triggers'
 import { fetchEngagementLetters, uploadEngagementLetter } from '@/lib/db'
 import type { EngagementLetterWithSignature } from '@/types'
@@ -672,11 +673,18 @@ export function ClientDetailPage() {
 
       {deskStage === 'history' && (
         <Suspense fallback={<div className="py-12 text-center"><LoadingSpinner size="lg" /></div>}>
-          <ActivityTimeline
-            requirements={requirements}
-            reminderLog={reminderLog}
-            clientName={client.business_name}
-          />
+          <div className="space-y-4">
+            <PrepRunsInbox
+              bookkeeperId={bookkeeperId ?? client.bookkeeper_id ?? 'bk-demo-001'}
+              clientId={client.id}
+              period={period}
+            />
+            <ActivityTimeline
+              requirements={requirements}
+              reminderLog={reminderLog}
+              clientName={client.business_name}
+            />
+          </div>
         </Suspense>
       )}
 
