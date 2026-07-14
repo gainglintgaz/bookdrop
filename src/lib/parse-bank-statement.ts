@@ -639,22 +639,7 @@ function parseMortgageLoanStatement(
   }
 }
 
-// ─── HELPER: empty result ─────────────────────────────────────────────────
-
-function emptyStatementSummary(type: StatementType, pageCount: number): StatementSummary {
-  return {
-    statementType: type,
-    transactions: [],
-    startDate: null,
-    endDate: null,
-    openingBalance: null,
-    closingBalance: null,
-    totalDebits: 0,
-    totalCredits: 0,
-    pageCount,
-    bankName: null,
-  }
-}
+// ─── HELPER ───────────────────────────────────────────────────────────────
 
 function round2(n: number): number {
   return Math.round(n * 100) / 100
