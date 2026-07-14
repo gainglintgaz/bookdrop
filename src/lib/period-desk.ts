@@ -61,7 +61,7 @@ export const PERIOD_DESK_CATALOG: readonly PeriodDeskStageDef[] = [
     id: 'history',
     label: 'History',
     shortLabel: 'History',
-    description: 'Reminders, activity, earned intelligence.',
+    description: 'Prep-run inbox, reminders, activity, earned intelligence.',
   },
   {
     id: 'power',

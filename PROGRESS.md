@@ -28,6 +28,7 @@ Thin portal + close-PREP; FinKeel remains flagship. Not competing with TaxDome /
 | **AI P1** | Period Desk | ✅ | Stage chips replace tab scavenger hunt |
 | **AI P2** | Prep agent | ✅ | Allowlisted run + cron endpoint (dry-run honest) |
 | **AI P2.2** | Storage CSV prep | ✅ | Cron downloads CSVs, categorize/audit, enrich uploads, workflow_runs |
+| **AI P2.3** | PDF + notify + inbox | ✅ | Server PDF text parse, prep-complete email, History prep-runs inbox |
 | **AI P3** | Receipt→lines | ✅ | Same line spine as statements |
 | **AI P4** | Firm k≥5 | ✅ | Cross-firm category suggestions gated |
 | **AI P5** | Export approve | ✅ | Human checkbox before QBO/Xero CSV |
