@@ -1,11 +1,10 @@
-// api/cron/close-prep.ts — P2 deepen: real candidate scan + optional execute.
-// Auth: Bearer CRON_SECRET
-// GET or POST { dryRun: true }  → list candidates only
-// POST { dryRun: false }        → run completeness-only prep + write workflow_runs
-// Never invents bank parses or posts to GL. humanGate always required.
+// api/cron/close-prep.ts — P2.2 storage-aware prep.
+// GET / dryRun: list candidates
+// POST dryRun:false : download CSVs, categorize, completeness, write workflow_runs
+// Auth: Bearer CRON_SECRET. Never posts to GL.
 
 import type { VercelRequest, VercelResponse } from '@vercel/node'
-import { executeCompletenessPrep, scanPrepCandidates } from '../_lib/prep-scan.js'
+import { executePrepCandidate, scanPrepCandidates } from '../_lib/prep-scan.js'
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST' && req.method !== 'GET') {
@@ -19,7 +18,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   const body = typeof req.body === 'object' && req.body ? req.body : {}
-  // GET always dry-run; POST defaults dryRun true unless explicitly false
   const dryRun = req.method === 'GET' || body.dryRun !== false
 
   const hasService =
@@ -30,7 +28,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(200).json({
       ok: true,
       dryRun: true,
-      agentVersion: 'prep-agent-v1.1',
+      agentVersion: 'prep-agent-v1.2',
       message:
         'Service role not configured — cannot scan. Set SUPABASE_SERVICE_ROLE_KEY + SUPABASE_URL.',
       candidates: [],
@@ -50,24 +48,26 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       status: string
       message: string
       runId?: string
+      txnCount?: number
+      csvParsed?: number
+      pdfSkipped?: number
     }> = []
 
     if (!dryRun) {
-      // Cap batch size to avoid timeout
-      const batch = actionable.slice(0, 25)
+      const batch = actionable.slice(0, 15)
       for (const c of batch) {
-        // Always run completeness-only on server (honest without PDF parse).
-        // full_playbook still needs browser/statement payload for extract/categorize.
-        const result = await executeCompletenessPrep(c)
+        const uploads = scan.uploadsByClient.get(c.clientId) ?? []
+        const reqMeta = scan.reqMetaByClient.get(c.clientId) ?? []
+        const result = await executePrepCandidate(c, uploads, reqMeta)
         executed.push({
           clientId: c.clientId,
           clientName: c.clientName,
           status: result.status,
-          message:
-            c.kind === 'full_playbook'
-              ? `${result.message} (parse artifacts present — full playbook still needs statement payload in browser or future storage-parse job)`
-              : result.message,
+          message: result.message,
           runId: result.runId,
+          txnCount: result.txnCount,
+          csvParsed: result.csvParsed,
+          pdfSkipped: result.pdfSkipped,
         })
       }
     }
@@ -75,7 +75,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(200).json({
       ok: true,
       dryRun,
-      agentVersion: 'prep-agent-v1.1',
+      agentVersion: 'prep-agent-v1.2',
       period: scan.period,
       signalCount: scan.signals.length,
       candidateCount: scan.candidates.length,
@@ -93,7 +93,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       executed,
       humanGate: 'required',
       note:
-        'Package approve remains human. Completeness-only steps never invent transactions. Full categorize/recon requires statement payload.',
+        'CSV bank/CC files are parsed from Storage. PDFs skipped (browser Power tools). Package approve remains human. No GL post.',
     })
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Close-prep scan failed'

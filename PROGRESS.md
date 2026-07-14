@@ -27,6 +27,7 @@ Thin portal + close-PREP; FinKeel remains flagship. Not competing with TaxDome /
 | **Phase 5.1** | Multi-period cycles | ✅ | 12-mo lookback snapshots; Riverside demo Loop 2+; design doc `BOOKDROP_PHASE_5_1_DESIGN.md` |
 | **AI P1** | Period Desk | ✅ | Stage chips replace tab scavenger hunt |
 | **AI P2** | Prep agent | ✅ | Allowlisted run + cron endpoint (dry-run honest) |
+| **AI P2.2** | Storage CSV prep | ✅ | Cron downloads CSVs, categorize/audit, enrich uploads, workflow_runs |
 | **AI P3** | Receipt→lines | ✅ | Same line spine as statements |
 | **AI P4** | Firm k≥5 | ✅ | Cross-firm category suggestions gated |
 | **AI P5** | Export approve | ✅ | Human checkbox before QBO/Xero CSV |
