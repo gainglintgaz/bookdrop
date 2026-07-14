@@ -69,7 +69,7 @@ export async function parseClientUploadsFromStorage(
     }
 
     const dl = await downloadStorageText(u.storage_path)
-    if (!dl.ok) {
+    if (dl.ok === false) {
       out.push({
         uploadId: u.id,
         filename: name,
