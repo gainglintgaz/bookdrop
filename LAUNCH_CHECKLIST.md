@@ -1,277 +1,121 @@
 # BookDrop Launch Checklist
 
-> **Purpose:** the single end-to-end runbook for going live. After Blocks 0-3 are shipped, this is the last 30-60 minutes of work to flip BookDrop from build-stage to production.
->
-> **Prerequisite:** all migrations 001-007 applied to live Supabase (Block 1 complete), R2 backup pipeline running (Block 2 complete), all e-sig hardening shipped (Block 3 E1+E2+E3 complete).
->
-> **Time required:** ~30-60 min total, depending on Resend domain verification (Resend sometimes auto-verifies in seconds; sometimes takes 24h for DKIM propagation).
+The single end-to-end runbook to flip BookDrop from build-stage to production (~30-60 min; Resend DKIM can add up to 24h). **Prereq:** migrations 001-008 live, R2 backups running, e-sig hardening (E1+E2+E3) shipped.
 
----
-
-## Pre-launch verification (before anything else)
-
-Open a fresh PowerShell:
+## Pre-launch verify
 
 ```powershell
 cd C:\Users\vtbsj\.gemini\antigravity\scratch\bookkeeper-portal
-git pull origin master
-npm install   # in case dependencies changed
-npm run build
-npx vitest run
+git pull origin master; npm install; npm run build; npx vitest run
 ```
+- [ ] Build 0 errors · all tests pass · no conflicting local changes
+- [ ] `scripts/verify-schema.sql` §8 shows all migrations applied
 
-- [ ] Build exits with 0 errors
-- [ ] All tests pass (84+ at time of writing)
-- [ ] No uncommitted local changes that would conflict with deploy
-- [ ] `scripts/verify-schema.sql` Section 8 shows all 7 migrations applied
+If any fail, **stop and investigate** before touching service config.
 
-If any of these fail, **stop here** and investigate before proceeding to service config.
+## Step 1 — Resend (~10 min, +24h if DKIM)
 
----
+- **Account:** sign up at https://resend.com (free tier = 3,000/mo, 100/day). Settings → Team → Add domain. Use your own domain (recommended) or `onboarding@resend.dev` (OK for first 2 weeks).
+- **Domain verify** (skip if using resend.dev): add SPF + DKIM at your DNS host → "Verify DNS" (5 min–24h). Then `RESEND_FROM_EMAIL=BookDrop <noreply@yourdomain>`.
+- **API key:** Settings → API Keys → Create, name `bookdrop-production`, permission **Sending Access**. Copy the `re_...` (shown once).
+- **Smoke test:** set `RESEND_API_KEY` + `RESEND_FROM_EMAIL` in `.env.local`, then `npx tsx scripts/smoke-test-resend.ts your-test@example.com` → test email lands in <30s (else check Resend → Logs).
+- [ ] Account created · domain verified (or resend.dev) · API key + smoke test passed
 
-## Step 1 — Resend setup (~10 min, sometimes +24h for DKIM)
+## Step 2 — Stripe (~15 min)
 
-### 1a. Account
-1. Sign up at https://resend.com (free tier covers 3,000 emails/month + 100/day — more than enough for V1 launch)
-2. Settings → Team → Add domain
-3. Choose: **Send from a domain you own** (recommended) OR **Use onboarding@resend.dev** (acceptable for first 2 weeks)
+- **Account:** https://dashboard.stripe.com, **Test mode** for now (switch to Live only after Step 5 passes).
+- **Products:** Add product `BookDrop Starter` / `$39 USD recurring monthly` → copy `price_...`. Add `BookDrop Pro` / `$79 USD recurring monthly` → copy `price_...`.
+- **API keys:** Developers → API keys → copy `pk_test_...` + `sk_test_...`.
+- **Webhook:** deferred to Step 4 (needs the live URL).
+- **Smoke test:** set `STRIPE_SECRET_KEY`, `STRIPE_PRICE_STARTER`, `STRIPE_PRICE_PRO` in `.env.local`, then `npx tsx scripts/smoke-test-stripe.ts` → opens a test Checkout URL → confirm Stripe's page loads (don't pay).
+- [ ] Both products created · keys copied · smoke test creates a Checkout URL
 
-### 1b. Domain verification (skip if using onboarding@resend.dev)
-1. Add SPF + DKIM records as shown by Resend (your domain registrar's DNS panel — Cloudflare, Namecheap, etc.)
-2. Click "Verify DNS" — usually clears within 5 min, sometimes 24h
-3. Once verified, set `RESEND_FROM_EMAIL=BookDrop <noreply@bookdrop.io>` (or your domain) in env vars later
+## Step 3 — Vercel env vars (~5 min)
 
-### 1c. API key
-1. Settings → API Keys → Create new
-2. Name: `bookdrop-production`
-3. Permission: **Sending Access** (Full Access not needed)
-4. Copy the `re_...` key — Resend shows it once
-
-### 1d. Smoke test locally
-1. Set `RESEND_API_KEY=re_...` and `RESEND_FROM_EMAIL=...` in `.env.local`
-2. Run:
-   ```powershell
-   npx tsx scripts/smoke-test-resend.ts your-test-email@example.com
-   ```
-3. Confirm a "BookDrop test email" lands in the test inbox within 30 sec
-4. If failure, check Resend dashboard → Logs for the rejection reason
-
-- [ ] Resend account created
-- [ ] Sending domain verified (or temporarily using onboarding@resend.dev)
-- [ ] API key generated + smoke test passed
-
----
-
-## Step 2 — Stripe setup (~15 min)
-
-### 2a. Stripe account
-1. Sign up / sign in at https://dashboard.stripe.com
-2. **Use Test mode for now** (toggle top-right). Switch to Live mode only after end-to-end verification.
-
-### 2b. Create products
-1. Products → Add product
-   - Name: `BookDrop Starter`
-   - Description: `Up to 15 clients, auto-reminders, ZIP downloads`
-   - Pricing: `$39 USD / Recurring monthly`
-   - **Save** → copy the `price_...` ID into a notes file
-2. Add product
-   - Name: `BookDrop Pro`
-   - Description: `Unlimited clients, late-rate insights, white-label email`
-   - Pricing: `$79 USD / Recurring monthly`
-   - **Save** → copy the `price_...` ID
-
-### 2c. API keys
-1. Developers → API keys
-2. Copy:
-   - `pk_test_...` (publishable, browser-safe)
-   - `sk_test_...` (secret, server-only)
-
-### 2d. Webhook setup (after deployment, see Step 4)
-We'll come back here once Vercel has deployed the production app. The webhook needs the live URL.
-
-### 2e. Smoke test locally
-1. Set in `.env.local`:
-   ```
-   STRIPE_SECRET_KEY=sk_test_...
-   STRIPE_PRICE_STARTER=price_...
-   STRIPE_PRICE_PRO=price_...
-   ```
-2. Run:
-   ```powershell
-   npx tsx scripts/smoke-test-stripe.ts
-   ```
-3. The script will create a Checkout Session in test mode and print the URL
-4. Open the URL → confirm Stripe's hosted checkout page loads → close (don't actually pay)
-
-- [ ] Both products created (`price_...` IDs in your notes)
-- [ ] Publishable + secret keys copied
-- [ ] Smoke test creates a Checkout URL successfully
-
----
-
-## Step 3 — Vercel environment variables (~5 min)
-
-### 3a. Open Vercel dashboard
-https://vercel.com/dashboard → Your project → Settings → Environment Variables
-
-### 3b. Set ALL of these for `Production` environment
+Dashboard → project → Settings → Environment Variables. Set ALL for **Production**:
 
 | Variable | Value | Source |
 |---|---|---|
-| `VITE_SUPABASE_URL` | `https://YOUR_PROJECT.supabase.co` | Supabase → Settings → API → Project URL |
-| `VITE_SUPABASE_ANON_KEY` | `eyJ...` | Supabase → Settings → API → anon (public) |
-| `SUPABASE_SERVICE_ROLE_KEY` | `eyJ...` | Supabase → Settings → API → service_role (secret) |
-| `RESEND_API_KEY` | `re_...` | Step 1c |
-| `RESEND_FROM_EMAIL` | `BookDrop <noreply@yourdomain>` or `onboarding@resend.dev` | Step 1b |
-| `STRIPE_SECRET_KEY` | `sk_test_...` (or `sk_live_...` once switching to live) | Step 2c |
-| `STRIPE_WEBHOOK_SECRET` | `whsec_...` (set after Step 4) | Step 4 below |
-| `VITE_STRIPE_PUBLISHABLE_KEY` | `pk_test_...` (or `pk_live_...`) | Step 2c |
-| `STRIPE_PRICE_STARTER` | `price_...` | Step 2b |
-| `STRIPE_PRICE_PRO` | `price_...` | Step 2b |
-| `CRON_SECRET` | (Vercel auto-generates this — leave blank if Vercel says so) | Auto |
-| `PUBLIC_APP_URL` | `https://bookkeeper-portal.vercel.app` (or your custom domain) | n/a |
+| `VITE_SUPABASE_URL` | `https://PROJECT.supabase.co` | Supabase → Settings → API |
+| `VITE_SUPABASE_ANON_KEY` | `eyJ...` | API → anon (public) |
+| `SUPABASE_SERVICE_ROLE_KEY` | `eyJ...` | API → service_role (secret) |
+| `RESEND_API_KEY` | `re_...` | Step 1 |
+| `RESEND_FROM_EMAIL` | `BookDrop <noreply@yourdomain>` or `onboarding@resend.dev` | Step 1 |
+| `STRIPE_SECRET_KEY` | `sk_test_...` (later `sk_live_...`) | Step 2 |
+| `STRIPE_WEBHOOK_SECRET` | `whsec_...` | Step 4 |
+| `VITE_STRIPE_PUBLISHABLE_KEY` | `pk_test_...` (later `pk_live_...`) | Step 2 |
+| `STRIPE_PRICE_STARTER` | `price_...` | Step 2 |
+| `STRIPE_PRICE_PRO` | `price_...` | Step 2 |
+| `CRON_SECRET` | (Vercel auto-generates) | Auto |
+| `PUBLIC_APP_URL` | `https://bookkeeper-portal.vercel.app` (or custom domain) | n/a |
+| `VITE_MODE` | `cloud` | **THE TRIGGER — set LAST**, after every other var |
 
-### 3c. Critical last variable
-
-| Variable | Value | Notes |
-|---|---|---|
-| `VITE_MODE` | `cloud` | **THIS IS THE TRIGGER** that switches the production deploy from demo to live. Set this LAST after every other variable is in place. |
-
-### 3d. Trigger redeploy
-
-After saving env vars, Vercel will auto-redeploy. Or force it: Deployments tab → ⋯ menu on the latest deploy → Redeploy.
-
-- [ ] All 12 env vars set
-- [ ] `VITE_MODE=cloud` is the last one set
-- [ ] Vercel redeployed (build status: Ready)
-
----
+After saving, Vercel auto-redeploys (or Deployments → ⋯ → Redeploy).
+- [ ] All vars set · `VITE_MODE=cloud` set last · redeploy status Ready
 
 ## Step 4 — Stripe webhook (after deploy)
 
-Now that the production URL is live, set up the webhook.
-
-1. Stripe dashboard → Developers → Webhooks → **Add endpoint**
-2. Endpoint URL: `https://bookkeeper-portal.vercel.app/api/stripe/webhook` (or your custom domain)
-3. Events to send:
-   - `checkout.session.completed`
-   - `customer.subscription.created`
-   - `customer.subscription.updated`
-   - `customer.subscription.deleted`
-   - `invoice.payment_failed`
-4. Click **Add endpoint** → copy the signing secret (`whsec_...`)
-5. Set `STRIPE_WEBHOOK_SECRET=whsec_...` in Vercel env vars (Production environment)
-6. Vercel auto-redeploys
-
-- [ ] Webhook endpoint added in Stripe
-- [ ] Signing secret set in Vercel
-- [ ] Test event sent (Stripe dashboard → Webhooks → click endpoint → Send test event → `checkout.session.completed`) → confirm 200 OK in the webhook log
-
----
+Stripe → Developers → Webhooks → Add endpoint:
+- URL: `https://bookkeeper-portal.vercel.app/api/stripe/webhook` (or custom domain)
+- Events: `checkout.session.completed`, `customer.subscription.created`, `customer.subscription.updated`, `customer.subscription.deleted`, `invoice.payment_failed`
+- Add endpoint → copy signing secret `whsec_...` → set `STRIPE_WEBHOOK_SECRET` in Vercel (auto-redeploys)
+- [ ] Endpoint added · secret set · test event (`checkout.session.completed`) returns 200 OK in the log
 
 ## Step 5 — Production smoke test (~10 min)
 
-This validates everything works end-to-end against the live Supabase + Stripe + Resend.
+Open https://bookkeeper-portal.vercel.app in **incognito**:
+- [ ] **Demo banner GONE** (else `VITE_MODE` didn't apply — recheck env)
+- [ ] Sign up → dashboard; verify `bookkeepers` row in Supabase
+- [ ] Add client → verify `clients` row with `portal_token`
+- [ ] Open `/upload/<TOKEN>` (new incognito) → upload a real bank PDF → verify `document_uploads` row has `auto_categorized_at`, `parsed_summary`, `categorization_summary`; portal shows "classified X of Y"
+- [ ] Dashboard → client → Analysis tab shows categorization; change a category → verify `categorization_corrections` row
+- [ ] Checkout `/checkout?plan=starter` → Stripe test card `4242 4242 4242 4242` → webhook fires → `bookkeepers.plan` = `starter`
+- [ ] Manual reminder → Resend log shows the email
+- [ ] E-sig: upload engagement letter → add 1-2 signatories → open invite URL (incognito) → ESIGN consent + sign → verify `signatures` + `engagement_letter_signatories` updated, `signature_email_log` shows confirmations
+- [ ] Audit export `/api/audit/signature-log?engagementLetterId=...&bookkeeperId=...` → CSV downloads with all columns
 
-Open https://bookkeeper-portal.vercel.app in **incognito** (no cached state):
+If a step fails, the usual cause is a bad env var — check Vercel → Deployments → Latest → Functions logs.
 
-- [ ] **Demo banner GONE.** If you still see "Demo mode" anywhere, `VITE_MODE` didn't take effect — re-check Vercel env.
-- [ ] Sign up flow: click "Get started" → fill form → submit → redirected to dashboard
-- [ ] Verify in Supabase: `bookkeepers` table has your new row with the email you used
-- [ ] Add a client → verify `clients` row inserted with portal_token
-- [ ] Open `https://bookkeeper-portal.vercel.app/upload/<TOKEN>` in another incognito window
-- [ ] Upload a real bank statement PDF
-  - Verify in Supabase: `document_uploads` row inserted with `auto_categorized_at`, `parsed_summary`, `categorization_summary` populated
-  - Verify the client portal shows "We classified X of Y transactions"
-- [ ] Open dashboard → click client → Analysis tab → categorization shows
-  - Click a category → dropdown opens → pick a different one → verify `categorization_corrections` row in Supabase
-- [ ] Trigger a checkout: click "Upgrade to Starter" or hit `/checkout?plan=starter`
-  - Stripe-hosted page loads → fill Stripe's test card `4242 4242 4242 4242` (any future date, any CVC)
-  - Complete checkout → Vercel webhook fires → verify `bookkeepers.plan` updates to `starter` in Supabase
-- [ ] Send a manual reminder → verify Resend log shows the email
-- [ ] Sign an engagement letter (multi-signer flow):
-  - Upload an engagement letter as the bookkeeper
-  - Add 1-2 signatories via EngagementLetterEditor
-  - Open the invite email's signing URL in another incognito window
-  - Accept ESIGN consent → draw signature → submit
-  - Verify `signatures` + `engagement_letter_signatories` rows updated, `signature_email_log` shows confirmation emails sent
-- [ ] Download audit log: `https://bookkeeper-portal.vercel.app/api/audit/signature-log?engagementLetterId=...&bookkeeperId=...` → CSV downloads with all expected columns
+## Step 6 — Switch Stripe to Live (only after Step 5 is 100%)
 
-If any step fails, the most common issue is a misconfigured env var. Check the Vercel function logs (Deployments → Latest → Functions tab → click the failing function).
+1. Stripe → toggle Live mode
+2. Recreate both products in Live (test-mode products don't transfer) → new Live `price_...`
+3. Get Live `sk_live_...` / `pk_live_...`
+4. Update Vercel: `STRIPE_SECRET_KEY`, `VITE_STRIPE_PUBLISHABLE_KEY`, `STRIPE_PRICE_STARTER`, `STRIPE_PRICE_PRO`
+5. Redo Step 4 in Live (new webhook + new `whsec_...`) → update `STRIPE_WEBHOOK_SECRET`
+- [ ] Live products · Live keys/Price IDs set · Live webhook · one real test txn (refund yourself)
 
-- [ ] All 12 smoke-test bullets pass
+## Step 7 — Optional custom domain
 
----
-
-## Step 6 — Switch Stripe to Live mode (when ready to take real money)
-
-Only do this AFTER Step 5 passes 100%.
-
-1. Stripe dashboard → toggle Live mode (top-right)
-2. Re-do Step 2b (create the same two products in Live mode — the test-mode products don't transfer)
-3. Get new Live API keys (`sk_live_...`, `pk_live_...`) and Live Price IDs
-4. Update Vercel env vars:
-   - `STRIPE_SECRET_KEY=sk_live_...`
-   - `VITE_STRIPE_PUBLISHABLE_KEY=pk_live_...`
-   - `STRIPE_PRICE_STARTER=price_live_...`
-   - `STRIPE_PRICE_PRO=price_live_...`
-5. Re-do Step 4 in Live mode (new webhook endpoint with new signing secret)
-6. Update `STRIPE_WEBHOOK_SECRET` to the live `whsec_...`
-7. Vercel auto-redeploys
-
-- [ ] Live mode products created
-- [ ] Live API keys + Price IDs set in Vercel
-- [ ] Live webhook configured
-- [ ] One real test transaction completed (use your own card, refund yourself)
-
----
-
-## Step 7 — Optional: custom domain
-
-1. Vercel dashboard → Project → Settings → Domains → Add
-2. Enter your domain (e.g. `bookdrop.app`)
-3. Update DNS as instructed (CNAME or A record at your registrar)
-4. Once Vercel shows "Configured" + "Production: Active", update `PUBLIC_APP_URL` env var
-5. Update Stripe webhook endpoint to use the new domain
-
----
+Vercel → Settings → Domains → Add → update DNS (CNAME/A) → once "Configured + Active", update `PUBLIC_APP_URL` and the Stripe webhook endpoint.
 
 ## Final check
 
-- [ ] Demo at https://bookkeeper-portal.vercel.app no longer shows "Demo mode"
-- [ ] Real signup works and lands in Supabase
-- [ ] Real upload triggers categorization and stores in `document_uploads`
+- [ ] No "Demo mode" at the live URL
+- [ ] Real signup lands in Supabase
+- [ ] Real upload triggers categorization → `document_uploads`
 - [ ] Real reminder sends via Resend
-- [ ] Real Stripe checkout fires the webhook
-- [ ] Real e-sig flow completes with email confirmations
+- [ ] Real checkout fires the webhook
+- [ ] Real e-sig completes with email confirmations
 - [ ] Audit-log export downloads cleanly
-- [ ] R2 backup ran today (check `backups.log`)
-- [ ] Calendar entry for restore drill #1 still scheduled
+- [ ] R2 backup ran today (`backups.log`)
+- [ ] Restore drill #1 still on the calendar
 
-If everything is green: **BookDrop is launched.**
+All green → **BookDrop is launched.**
 
----
+## Rollback
 
-## Rollback plan
+1. **Fastest:** flip `VITE_MODE=cloud` → `demo` in Vercel (~30s redeploy). No data lost — cloud rows stay, just unqueried.
+2. **Schema:** run `scripts/ROLLBACK_004.sql` (+ E1/E2/E3 rollbacks) only if a migration broke. **Pre-launch only** — destroys data once real customers exist.
+3. **Stripe:** revert `STRIPE_SECRET_KEY` to a Test key. New checkouts go to test mode.
+4. **Resend:** unset `RESEND_API_KEY`. Email degrades to console.warn; signatures/reminders still complete.
 
-If anything breaks in production:
+## Ongoing maintenance
 
-1. **Quickest fix**: flip `VITE_MODE=cloud` → `VITE_MODE=demo` in Vercel. Vercel auto-redeploys to demo mode in ~30 seconds. No data is destroyed; cloud-mode rows stay in Supabase, just aren't queried.
-
-2. **Schema rollback**: only run `scripts/ROLLBACK_004.sql` (and the analogous E1/E2/E3 rollbacks if needed) if a migration broke. Pre-launch only — once real customers exist, schema rollbacks lose data.
-
-3. **Stripe issue**: switch `STRIPE_SECRET_KEY` back to a Test mode key. Live transactions stay valid; new checkouts go to test mode.
-
-4. **Resend issue**: temporarily unset `RESEND_API_KEY`. Email sending degrades to console.warn; signatures and reminders still complete (signatures are valid even when email confirmations fail).
-
----
-
-## Post-launch ongoing maintenance
-
-| Cadence | Task | Reference |
+| Cadence | Task | Ref |
 |---|---|---|
-| Daily | Glance at `backups.log` for yesterday's success line | `scripts/SETUP_BACKUPS.md` |
-| Weekly | Check Vercel function logs for unexpected errors | Vercel dashboard |
-| Monthly | Eyeball R2 bucket for ~30 dump files | Cloudflare R2 |
-| Quarterly | Execute restore drill | `scripts/RESTORE_DRILL.md` |
-| Annually | Rotate R2 + Resend + Stripe API keys | This file Step 1c, 2c, R2 setup |
+| Daily | Check `backups.log` success line | `scripts/SETUP_BACKUPS.md` |
+| Weekly | Vercel function logs for errors | Vercel dashboard |
+| Monthly | R2 bucket has ~30 dump files | Cloudflare R2 |
+| Quarterly | Restore drill | `scripts/RESTORE_DRILL.md` |
+| Annually | Rotate R2 + Resend + Stripe keys | Steps 1, 2 + R2 setup |
