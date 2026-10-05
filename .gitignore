@@ -1,0 +1,29 @@
+node_modules
+dist
+*.log
+
+.vercel
+
+# Local factory working artifacts (machine-specific, not project source)
+.claude/launch.json
+.claude/v4.3-harvest.md
+INTEL_FEED.md
+POWERSHELL_BOOKDROP_OVERNIGHT.txt
+
+# Secrets -- never commit
+.env
+.env.local
+.env.development
+.env.development.local
+.env.production
+.env.production.local
+.env.test
+.env.test.local
+.env.staging
+*.env
+secrets.json
+secrets.yaml
+secrets.toml
+
+# supabase CLI temp
+supabase/.temp/
