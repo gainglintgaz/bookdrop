@@ -5,8 +5,13 @@
 
 export type AppMode = 'local' | 'cloud' | 'demo'
 
-export const CURRENT_MODE: AppMode =
-  (import.meta.env.VITE_MODE as AppMode) || 'demo'
+export function parseAppMode(value: string | undefined): AppMode {
+  if (!value) return 'demo'
+  if (value === 'demo' || value === 'local' || value === 'cloud') return value
+  throw new Error('Invalid application mode. Choose demo, local, or cloud.')
+}
+
+export const CURRENT_MODE = parseAppMode(import.meta.env.VITE_MODE)
 
 export const isDemoMode = CURRENT_MODE === 'demo'
 export const isLocalMode = CURRENT_MODE === 'local'

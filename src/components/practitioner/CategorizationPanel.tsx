@@ -65,6 +65,7 @@ export function CategorizationPanel({ report, clientId }: Props) {
   const [showAll, setShowAll] = useState(false)
   const [filterCategory, setFilterCategory] = useState<string | null>(null)
   const [overrides, setOverrides] = useState<Record<number, string>>({})
+  const [correctionNotice, setCorrectionNotice] = useState<string | null>(null)
   const bookkeeperId = useAuthStore(state => state.bookkeeper?.id ?? null)
 
   // Apply local overrides on top of the engine's output. Once a correction is
@@ -86,10 +87,10 @@ export function CategorizationPanel({ report, clientId }: Props) {
     if (!bookkeeperId || !clientId) {
       // Demo without an authenticated bookkeeper still shows the override —
       // we simply don't persist. Honest copy: this is a preview, not a write.
-      console.warn('[CategorizationPanel] Skipping correction write (no bookkeeperId/clientId)')
+      setCorrectionNotice('This category change is a preview; no correction history was saved.')
       return
     }
-    await recordCorrection({
+    const correctionId = await recordCorrection({
       bookkeeperId,
       clientId,
       vendorNormalized: txn.matchedVendor ?? null,
@@ -98,10 +99,12 @@ export function CategorizationPanel({ report, clientId }: Props) {
       correctedCategory: newCategory,
       originalConfidence: txn.confidence,
     })
+    setCorrectionNotice(correctionId ? null : 'This category changed in this view, but its correction history could not be saved. Refresh before trying again.')
   }
 
   return (
     <div className="space-y-6">
+      {correctionNotice && <p role="status" className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">{correctionNotice}</p>}
       {/* Summary Cards */}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <div className="rounded-lg border border-gray-200 bg-white p-3">

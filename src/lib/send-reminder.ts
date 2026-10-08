@@ -2,7 +2,7 @@
 // Manual reminder sending from the dashboard.
 // Calls the /api/send-reminder Vercel serverless function which sends via Resend.
 
-import { isDemoMode } from '@/lib/mode'
+import { isDemoMode, isLocalMode } from '@/lib/mode'
 import { getCurrentPeriod } from '@/lib/utils'
 import { supabase } from '@/lib/supabase'
 import type { Client } from '@/types'
@@ -17,10 +17,12 @@ interface SendReminderResult {
 export async function sendManualReminder(
   client: Client,
   bookkeeperId: string,
+  period = getCurrentPeriod(),
 ): Promise<SendReminderResult> {
   if (isDemoMode) return { success: true, error: null }
+  if (isLocalMode) return { success: false, error: 'Local reminder email is not configured yet. No reminder was sent.' }
 
-  const { year, month } = getCurrentPeriod()
+  const { year, month } = period
 
   try {
     const { data: { session } } = await supabase.auth.getSession()

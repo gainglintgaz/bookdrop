@@ -3,7 +3,8 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
-import { isDemoMode } from '@/lib/mode'
+import { isDemoMode, isLocalMode } from '@/lib/mode'
+import { backendRequest } from '@/lib/backend'
 import { getDemoClients } from '@/lib/demo-data'
 import { computeSubmissionStatus } from '@/types'
 import type { ClientWithStatus, RequirementWithUploads, DocumentUpload, DocumentRequirement, Client } from '@/types'
@@ -34,39 +35,43 @@ export function useClients(): UseClientsReturn {
         return
       }
 
-      // Fetch clients
-      const { data: clientRows, error: clientErr } = await supabase
-        .from('clients')
-        .select('*')
-        .order('business_name', { ascending: true })
+      let clientRows: Client[]
+      let requirements: DocumentRequirement[]
+      let uploads: DocumentUpload[]
+      if (isLocalMode) {
+        const result = await backendRequest<{ clients: Client[]; requirements: DocumentRequirement[]; uploads: DocumentUpload[] }>('/clients/status', { year: period.year, month: period.month })
+        clientRows = result.clients
+        requirements = result.requirements
+        uploads = result.uploads
+      } else {
+        const { data, error: clientErr } = await supabase
+          .from('clients')
+          .select('*')
+          .order('business_name', { ascending: true })
 
-      if (clientErr) throw new Error(clientErr.message)
-      if (!clientRows || clientRows.length === 0) {
-        setClients([])
-        return
+        if (clientErr) throw new Error(clientErr.message)
+        clientRows = data ?? []
+        const clientIds = clientRows.map(c => c.id)
+
+        const [reqResult, uploadResult] = clientIds.length ? await Promise.all([
+          supabase
+            .from('document_requirements')
+            .select('*')
+            .in('client_id', clientIds),
+          supabase
+            .from('document_uploads')
+            .select('*')
+            .in('client_id', clientIds)
+            .eq('period_year', period.year)
+            .eq('period_month', period.month),
+        ]) : [{ data: [], error: null }, { data: [], error: null }]
+
+        if (reqResult.error) throw new Error(reqResult.error.message)
+        if (uploadResult.error) throw new Error(uploadResult.error.message)
+
+        requirements = reqResult.data ?? []
+        uploads = uploadResult.data ?? []
       }
-
-      const clientIds = clientRows.map((c: Client) => c.id)
-
-      // Fetch requirements and uploads in parallel
-      const [reqResult, uploadResult] = await Promise.all([
-        supabase
-          .from('document_requirements')
-          .select('*')
-          .in('client_id', clientIds),
-        supabase
-          .from('document_uploads')
-          .select('*')
-          .in('client_id', clientIds)
-          .eq('period_year', period.year)
-          .eq('period_month', period.month),
-      ])
-
-      if (reqResult.error) throw new Error(reqResult.error.message)
-      if (uploadResult.error) throw new Error(uploadResult.error.message)
-
-      const requirements = reqResult.data ?? []
-      const uploads = uploadResult.data ?? []
 
       // Build enriched client list
       const enriched: ClientWithStatus[] = clientRows.map((client: Client) => {

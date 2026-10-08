@@ -293,8 +293,8 @@ function computeMovingAverage(
 ): { avgIncome: number; avgExpenses: number; monthsUsed: number } {
   // Collect the most recent `windowSize` months before current
   const months: MonthBucket[] = []
-  let y = currentYear
-  let m = currentMonth
+  const y = currentYear
+  const m = currentMonth
 
   for (let i = 0; i < windowSize + 12; i++) {
     // go back

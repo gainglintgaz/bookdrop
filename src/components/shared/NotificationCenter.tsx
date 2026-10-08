@@ -118,29 +118,25 @@ export function NotificationCenter({ className }: NotificationCenterProps) {
   const [open, setOpen] = useState(false)
   const [notifications, setNotifications] = useState<AppNotification[]>([])
   const [unreadCount, setUnreadCount] = useState(0)
+  const [error, setError] = useState<string | null>(null)
   const panelRef = useRef<HTMLDivElement>(null)
   const navigate = useNavigate()
 
   const refresh = useCallback(async () => {
-    const [items, count] = await Promise.all([
-      fetchNotifications(),
-      getUnreadNotificationCount(),
-    ])
-    setNotifications(items)
-    setUnreadCount(count)
+    try {
+      const [items, count] = await Promise.all([fetchNotifications(), getUnreadNotificationCount()])
+      setNotifications(items); setUnreadCount(count); setError(null)
+    } catch { setError('Unable to load notifications.') }
   }, [])
 
   // Fetch on mount
   useEffect(() => {
-    void refresh()
-  }, [refresh])
-
-  // Refresh when opening
-  useEffect(() => {
-    if (open) {
-      void refresh()
-    }
-  }, [open, refresh])
+    let active = true
+    Promise.all([fetchNotifications(), getUnreadNotificationCount()]).then(([items, count]) => {
+      if (active) { setNotifications(items); setUnreadCount(count); setError(null) }
+    }).catch(() => { if (active) setError('Unable to load notifications.') })
+    return () => { active = false }
+  }, [])
 
   // Close on outside click
   useEffect(() => {
@@ -158,25 +154,31 @@ export function NotificationCenter({ className }: NotificationCenterProps) {
 
   const handleNotificationClick = useCallback(
     async (notification: AppNotification) => {
-      if (!notification.read) {
-        await markNotificationRead(notification.id)
-        setNotifications(prev =>
-          prev.map(n => (n.id === notification.id ? { ...n, read: true } : n)),
-        )
-        setUnreadCount(prev => Math.max(0, prev - 1))
-      }
-      if (notification.action_url) {
-        navigate(notification.action_url)
-        setOpen(false)
-      }
+      try {
+        if (!notification.read) {
+          await markNotificationRead(notification.id)
+          setNotifications(prev =>
+            prev.map(n => (n.id === notification.id ? { ...n, read: true } : n)),
+          )
+          setUnreadCount(prev => Math.max(0, prev - 1))
+        }
+        if (notification.action_url) {
+          navigate(notification.action_url)
+          setOpen(false)
+        }
+        setError(null)
+      } catch { setError('Unable to update notifications. Please try again.') }
     },
     [navigate],
   )
 
   const handleMarkAllRead = useCallback(async () => {
-    await markAllRead()
-    setNotifications(prev => prev.map(n => ({ ...n, read: true })))
-    setUnreadCount(0)
+    try {
+      await markAllRead()
+      setNotifications(prev => prev.map(n => ({ ...n, read: true })))
+      setUnreadCount(0)
+      setError(null)
+    } catch { setError('Unable to update notifications. Please try again.') }
   }, [])
 
   const grouped = groupNotifications(notifications)
@@ -185,7 +187,7 @@ export function NotificationCenter({ className }: NotificationCenterProps) {
     <div ref={panelRef} className={cn('relative', className)}>
       {/* Bell button */}
       <button
-        onClick={() => setOpen(prev => !prev)}
+        onClick={() => { if (!open) void refresh(); setOpen(prev => !prev) }}
         className="relative rounded-lg p-2 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700"
         aria-label="Notifications"
       >
@@ -196,6 +198,7 @@ export function NotificationCenter({ className }: NotificationCenterProps) {
           </span>
         )}
       </button>
+      {error && <p role="alert" className="text-xs text-gray-500">{error}</p>}
 
       {/* Dropdown panel */}
       {open && (

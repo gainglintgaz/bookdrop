@@ -3,10 +3,12 @@ import { CheckCircle, FileSignature, Loader2, ExternalLink } from 'lucide-react'
 import { SignatureCanvas } from './SignatureCanvas'
 import { ESignConsentScreen, type ConsentAcceptance } from './ESignConsentScreen'
 import { supabase } from '@/lib/supabase'
-import type { EngagementLetterWithSignature } from '@/types'
+import type { PortalEngagementLetter } from '@/types'
+import { isLocalMode } from '@/lib/mode'
+import { downloadPrivateFile } from '@/lib/files'
 
 interface EngagementLetterRowProps {
-  letter: EngagementLetterWithSignature
+  letter: PortalEngagementLetter
   clientId: string
   portalToken: string
   signerName: string
@@ -42,6 +44,12 @@ export function EngagementLetterRow({
   const isSigned = !!letter.signature
 
   const handleViewDocument = async () => {
+    if (isLocalMode) {
+      setError(null)
+      try { await downloadPrivateFile(letter.id, 'letter', letter.filename, portalToken) }
+      catch (cause) { setError(cause instanceof Error ? cause.message : 'Unable to download the document.') }
+      return
+    }
     if (viewUrl) { window.open(viewUrl, '_blank'); return }
     const { data } = await supabase.storage
       .from('documents')
@@ -128,7 +136,7 @@ export function EngagementLetterRow({
             className="flex items-center gap-1 text-xs text-primary hover:underline"
           >
             <ExternalLink className="h-3 w-3" />
-            View document
+            {isLocalMode ? 'Download document' : 'View document'}
           </button>
           {isSigned && letter.signature && (
             <span className="flex items-center gap-1 text-xs font-medium text-emerald-700">
@@ -140,7 +148,9 @@ export function EngagementLetterRow({
       </div>
 
       {/* idle: prompt to begin */}
-      {!isSigned && stage === 'idle' && (
+      {error && <p role="alert" className="mb-3 text-xs text-red-600">{error}</p>}
+      {!isSigned && isLocalMode && <p className="text-xs text-gray-500">Electronic signing is not available in local mode yet.</p>}
+      {!isSigned && !isLocalMode && stage === 'idle' && (
         <div className="space-y-3">
           <p className="text-xs text-gray-500">
             Please review the document above, then click below to begin signing. You'll see a brief

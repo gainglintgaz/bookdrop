@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
+import { isLocalMode } from '@/lib/mode'
+import { backendRequest } from '@/lib/backend'
 import { useAuthStore } from '@/stores/auth.store'
 import { tenantConfig } from '@/lib/tenant.config'
 import { generatePortalToken, cn } from '@/lib/utils'
@@ -69,64 +71,84 @@ export function AddClientPage() {
     setSubmitting(true)
 
     try {
-      const portalToken = generatePortalToken()
-
-      // Insert client
-      const { data: client, error: clientErr } = await supabase
-        .from('clients')
-        .insert({
-          bookkeeper_id: user.id,
+      let count: number | null = null
+      if (isLocalMode) {
+        await backendRequest('/clients', {
           business_name: businessName.trim(),
           contact_name: contactName.trim() || null,
           contact_email: contactEmail.trim(),
-          portal_token: portalToken,
           notes_for_client: notesForClient.trim() || null,
           notes_private: notesPrivate.trim() || null,
+          requirements: requirements.filter(r => r.label.trim()).map(r => ({
+            label: r.label.trim(), doc_type: r.doc_type, required: r.required,
+          })),
+          reminderDays: tenantConfig.defaultReminderDays,
         })
-        .select()
-        .maybeSingle()
+        // This optional nudge read must not turn a committed creation into an
+        // apparent save failure that encourages a duplicate submission.
+        const rows = await backendRequest<unknown[]>('/clients').catch(() => null)
+        count = rows?.length ?? null
+      } else {
+        const portalToken = generatePortalToken()
 
-      if (clientErr) throw new Error(clientErr.message)
-      if (!client) throw new Error('Client was not created')
+        // Insert client
+        const { data: client, error: clientErr } = await supabase
+          .from('clients')
+          .insert({
+            bookkeeper_id: user.id,
+            business_name: businessName.trim(),
+            contact_name: contactName.trim() || null,
+            contact_email: contactEmail.trim(),
+            portal_token: portalToken,
+            notes_for_client: notesForClient.trim() || null,
+            notes_private: notesPrivate.trim() || null,
+          })
+          .select()
+          .maybeSingle()
 
-      // Insert requirements
-      const validReqs = requirements.filter(r => r.label.trim())
-      if (validReqs.length > 0) {
-        const { error: reqErr } = await supabase
-          .from('document_requirements')
-          .insert(
-            validReqs.map((r, i) => ({
-              client_id: client.id,
-              label: r.label.trim(),
-              doc_type: r.doc_type,
-              required: r.required,
-              sort_order: i,
-            })),
-          )
+        if (clientErr) throw new Error(clientErr.message)
+        if (!client) throw new Error('Client was not created')
 
-        if (reqErr) throw new Error(reqErr.message)
+        // Insert requirements
+        const validReqs = requirements.filter(r => r.label.trim())
+        if (validReqs.length > 0) {
+          const { error: reqErr } = await supabase
+            .from('document_requirements')
+            .insert(
+              validReqs.map((r, i) => ({
+                client_id: client.id,
+                label: r.label.trim(),
+                doc_type: r.doc_type,
+                required: r.required,
+                sort_order: i,
+              })),
+            )
+
+          if (reqErr) throw new Error(reqErr.message)
+        }
+
+        // Insert default reminder schedules
+        if (tenantConfig.defaultReminderDays.length > 0) {
+          const { error: remErr } = await supabase
+            .from('reminder_schedules')
+            .insert(
+              tenantConfig.defaultReminderDays.map((day, i) => ({
+                client_id: client.id,
+                day_of_month: day,
+                reminder_number: i + 1,
+              })),
+            )
+
+          if (remErr) throw new Error(remErr.message)
+        }
+
+        // Fire engagement triggers based on client count
+        const { count: cloudCount } = await supabase
+          .from('clients')
+          .select('*', { count: 'exact', head: true })
+          .eq('bookkeeper_id', user.id)
+        count = cloudCount
       }
-
-      // Insert default reminder schedules
-      if (tenantConfig.defaultReminderDays.length > 0) {
-        const { error: remErr } = await supabase
-          .from('reminder_schedules')
-          .insert(
-            tenantConfig.defaultReminderDays.map((day, i) => ({
-              client_id: client.id,
-              day_of_month: day,
-              reminder_number: i + 1,
-            })),
-          )
-
-        if (remErr) throw new Error(remErr.message)
-      }
-
-      // Fire engagement triggers based on client count
-      const { count } = await supabase
-        .from('clients')
-        .select('*', { count: 'exact', head: true })
-        .eq('bookkeeper_id', user.id)
 
       let nudgeFired = false
 

@@ -1,0 +1,10 @@
+{
+  "name": "bookdrop-local-api",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=22.18.0" },
+  "dependencies": {
+    "better-auth": "1.7.7",
+    "pg": "8.23.1"
+  }
+}

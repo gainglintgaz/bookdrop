@@ -9,7 +9,7 @@
 //
 // Honest data only. Every number traces to a source:
 //   • Current-period stats: counted live from document_uploads / requirements
-//   • 12-month sparkline: LOCKED until close_cycle_outcomes has 12+ rows for
+//   • Close-cycle trends: LOCKED until close_cycle_outcomes has 12+ rows for
 //     this client (per ai-first-principles.md §3 Trust Ladder Loop 12+)
 //   • Open items: pulled from real DB queries, not estimated
 //
@@ -22,13 +22,7 @@ import {
   ArrowLeft, FileText, CheckCircle, AlertTriangle, Clock,
   TrendingUp, Building, Mail, Calendar, Lock,
 } from 'lucide-react'
-import { supabase } from '@/lib/supabase'
-import { isDemoMode } from '@/lib/mode'
-import {
-  getDemoClient,
-  getDemoRequirementsWithUploads,
-  getDemoReminderLogs,
-} from '@/lib/demo-data'
+import { fetchClientTearsheet, tearsheetMetrics, type TearsheetOutcome } from '@/lib/client-tearsheet'
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
 import { ErrorState } from '@/components/shared/ErrorState'
 import { StatusBadge } from '@/components/practitioner/StatusBadge'
@@ -41,22 +35,13 @@ import type { ProvenanceData } from '@/types/provenance'
 /** Per Trust Ladder: trends need Loop 12+ before "honest aggregate" copy. */
 const TREND_UNLOCK_THRESHOLD = 12
 
-interface CloseCycleOutcome {
-  period_year: number
-  period_month: number
-  hours_saved_minutes: number | null
-  accuracy_pct: number | null
-  reconciliation_match_pct: number | null
-  total_categorized: number | null
-  total_corrected: number | null
-}
 
 export function ClientTearsheetPage() {
   const { clientId } = useParams<{ clientId: string }>()
   const [client, setClient] = useState<Client | null>(null)
   const [requirements, setRequirements] = useState<RequirementWithUploads[]>([])
   const [recentReminders, setRecentReminders] = useState<ReminderLog[]>([])
-  const [outcomes, setOutcomes] = useState<CloseCycleOutcome[]>([])
+  const [outcomes, setOutcomes] = useState<TearsheetOutcome[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const period = getCurrentPeriod()
@@ -70,47 +55,12 @@ export function ClientTearsheetPage() {
         setLoading(true)
         setError(null)
 
-        if (isDemoMode) {
-          const c = getDemoClient(clientId!)
-          if (!c) throw new Error('Client not found')
-          if (cancelled) return
-          setClient(c)
-          setRequirements(getDemoRequirementsWithUploads(clientId!))
-          setRecentReminders(getDemoReminderLogs(clientId!).slice(0, 5))
-          // Demo mode has no close_cycle_outcomes yet — leave empty, sparkline stays LOCKED
-          setOutcomes([])
-        } else {
-          // Cloud mode — parallel fetches
-          const [clientRes, reqsRes, remindersRes, outcomesRes] = await Promise.all([
-            supabase.from('clients').select('*').eq('id', clientId!).maybeSingle(),
-            supabase
-              .from('document_requirements')
-              .select('*, uploads:document_uploads(*)')
-              .eq('client_id', clientId!),
-            supabase
-              .from('reminder_log')
-              .select('*')
-              .eq('client_id', clientId!)
-              .order('sent_at', { ascending: false })
-              .limit(5),
-            supabase
-              .from('close_cycle_outcomes')
-              .select('period_year,period_month,hours_saved_minutes,accuracy_pct,reconciliation_match_pct,total_categorized,total_corrected')
-              .eq('client_id', clientId!)
-              .order('period_year', { ascending: false })
-              .order('period_month', { ascending: false })
-              .limit(24),
-          ])
-
-          if (clientRes.error) throw new Error(clientRes.error.message)
-          if (!clientRes.data) throw new Error('Client not found')
-          if (cancelled) return
-
-          setClient(clientRes.data as Client)
-          setRequirements((reqsRes.data ?? []) as RequirementWithUploads[])
-          setRecentReminders((remindersRes.data ?? []) as ReminderLog[])
-          setOutcomes((outcomesRes.data ?? []) as CloseCycleOutcome[])
-        }
+        const snapshot = await fetchClientTearsheet(clientId!, period.year, period.month)
+        if (cancelled) return
+        setClient(snapshot.client)
+        setRequirements(snapshot.requirements)
+        setRecentReminders(snapshot.reminders)
+        setOutcomes(snapshot.outcomes)
       } catch (err) {
         if (!cancelled) {
           setError(err instanceof Error ? err.message : 'Failed to load tearsheet')
@@ -122,7 +72,7 @@ export function ClientTearsheetPage() {
 
     load()
     return () => { cancelled = true }
-  }, [clientId])
+  }, [clientId, period.year, period.month])
 
   if (loading) return <div className="flex h-64 items-center justify-center"><LoadingSpinner size="lg" /></div>
   if (error || !client) return <ErrorState message={error ?? 'Client not found'} />
@@ -138,15 +88,12 @@ export function ClientTearsheetPage() {
   const sparklineUnlocked = cyclesCompleted >= TREND_UNLOCK_THRESHOLD
 
   // Aggregate from close_cycle_outcomes (no fabrication — if no data, render LOCKED)
-  const lifetimeHoursSaved = outcomes.reduce((s, o) => s + (o.hours_saved_minutes ?? 0), 0) / 60
-  const avgAccuracy = outcomes.length > 0
-    ? outcomes.reduce((s, o) => s + (o.accuracy_pct ?? 0), 0) / outcomes.length
-    : null
+  const { lifetimeHoursSaved, avgAccuracy, accuracySamples, hoursSamples } = tearsheetMetrics(outcomes)
 
   // ── Provenance metadata for the tearsheet stats ────────────────────────────
   const submissionProvenance: ProvenanceData = {
     type: 'computed',
-    summary: `${submittedDocs} of ${totalDocs} required documents received`,
+    summary: `${submittedDocs} of ${totalDocs} configured documents received`,
     detail: missing.length > 0
       ? `Missing: ${missing.join(', ')}`
       : 'All required documents present.',
@@ -156,8 +103,8 @@ export function ClientTearsheetPage() {
   const trendProvenance: ProvenanceData = sparklineUnlocked
     ? {
         type: 'aggregate',
-        summary: `Average across ${cyclesCompleted} close cycles`,
-        detail: 'Computed from close_cycle_outcomes rows for this client.',
+        summary: `${cyclesCompleted} recorded close cycles`,
+        detail: 'Computed from available measurements in close_cycle_outcomes for this client.',
         sampleSize: { observed: cyclesCompleted, threshold: TREND_UNLOCK_THRESHOLD },
         citations: [{ label: `${cyclesCompleted} cycles in close_cycle_outcomes` }],
       }
@@ -233,24 +180,24 @@ export function ClientTearsheetPage() {
         </div>
       </section>
 
-      {/* ── 12-month trend (LOCKED unless 12+ cycles) ─────────────────────── */}
+      {/* ── Close-cycle trends (LOCKED unless 12+ cycles) ──────────────────── */}
       <section className="mb-8">
         <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold text-gray-700">
           <TrendingUp className="h-4 w-4 text-gray-500" />
-          12-month trend
+          Close-cycle trends
           <Provenance data={trendProvenance} variant="icon-only" />
         </h2>
         {sparklineUnlocked ? (
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             <StatCard
               label="Total hours saved"
-              value={`${lifetimeHoursSaved.toFixed(1)} h`}
-              hint={`across ${cyclesCompleted} cycles`}
+              value={lifetimeHoursSaved === null ? '—' : `${lifetimeHoursSaved.toFixed(1)} h`}
+              hint={`${hoursSamples} measured cycles`}
             />
             <StatCard
               label="Avg AI accuracy"
               value={avgAccuracy !== null ? `${avgAccuracy.toFixed(1)}%` : '—'}
-              hint="per close_cycle_outcomes"
+              hint={`${accuracySamples} measured cycles`}
             />
             <StatCard
               label="Cycles completed"
@@ -258,7 +205,7 @@ export function ClientTearsheetPage() {
               hint="closed periods"
             />
             <StatCard
-              label="Reminders this year"
+              label="Recent reminders"
               value={`${recentReminders.length}`}
               hint="from reminder_log"
             />
@@ -267,7 +214,7 @@ export function ClientTearsheetPage() {
           <div className="rounded-lg border-2 border-dashed border-gray-200 bg-gray-50 px-6 py-8 text-center">
             <Lock className="mx-auto mb-2 h-6 w-6 text-gray-400" />
             <p className="text-sm font-medium text-gray-700">
-              12-month trend unlocks after 12 closed cycles
+              Trend history unlocks after 12 closed cycles
             </p>
             <p className="mt-1 text-xs text-gray-500">
               Completed so far for this client: <strong>{cyclesCompleted}</strong> of {TREND_UNLOCK_THRESHOLD}.

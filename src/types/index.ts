@@ -317,6 +317,11 @@ export interface EngagementLetterWithSignature extends EngagementLetter {
   signatories?: EngagementLetterSignatory[]
 }
 
+/** Portal displays signing status without exposing consent, images or invites. */
+export type PortalEngagementLetter = EngagementLetter & {
+  signature: Pick<Signature, 'id' | 'signed_at'> | null
+}
+
 // ─── ENRICHED/JOINED TYPES ──────────────────────────────────────────────────
 
 /** Requirement with its uploads for a specific month */

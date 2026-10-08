@@ -5,6 +5,8 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { X, Send, Paperclip, CheckCheck, MessageSquare, Loader2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { fetchMessages, sendMessage, markAsRead } from '@/lib/messages'
+import { isLocalMode } from '@/lib/mode'
+import { downloadPrivateFile } from '@/lib/files'
 import type { Message } from '@/types/messages'
 
 interface MessagePanelProps {
@@ -13,6 +15,7 @@ interface MessagePanelProps {
   senderType: 'bookkeeper' | 'client'
   onClose: () => void
   className?: string
+  portalToken?: string
 }
 
 /** Format a date into relative human-readable text */
@@ -45,12 +48,14 @@ export function MessagePanel({
   senderType,
   onClose,
   className,
+  portalToken,
 }: MessagePanelProps) {
   const [messages, setMessages] = useState<Message[]>([])
   const [loading, setLoading] = useState(true)
   const [inputText, setInputText] = useState('')
   const [sending, setSending] = useState(false)
   const [sendError, setSendError] = useState<string | null>(null)
+  const [loadError, setLoadError] = useState<string | null>(null)
   const [attachedFiles, setAttachedFiles] = useState<File[]>([])
   const [dragOver, setDragOver] = useState(false)
 
@@ -64,16 +69,17 @@ export function MessagePanel({
 
   const loadMessages = useCallback(async () => {
     try {
-      const data = await fetchMessages(clientId)
+      const data = await fetchMessages(clientId, portalToken)
       setMessages(data)
       // Mark messages from the other party as read
-      await markAsRead(clientId, senderType)
+      await markAsRead(clientId, senderType, portalToken)
+      setLoadError(null)
     } catch {
-      // Silently handle — messages will retry on next poll
+      setLoadError('The conversation or read receipt could not be refreshed. Please try again.')
     } finally {
       setLoading(false)
     }
-  }, [clientId, senderType])
+  }, [clientId, senderType, portalToken])
 
   // Initial load
   useEffect(() => {
@@ -105,16 +111,17 @@ export function MessagePanel({
         trimmed || '(file attachment)',
         senderType,
         attachedFiles.length > 0 ? attachedFiles : undefined,
+        portalToken,
       )
       setMessages(prev => [...prev, newMsg])
       setInputText('')
       setAttachedFiles([])
-    } catch {
-      setSendError('Failed to send — please try again')
+    } catch (error) {
+      setSendError(isLocalMode && error instanceof Error ? error.message : 'Failed to send — please try again')
     } finally {
       setSending(false)
     }
-  }, [inputText, attachedFiles, clientId, senderType])
+  }, [inputText, attachedFiles, clientId, senderType, portalToken])
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -185,6 +192,7 @@ export function MessagePanel({
 
       {/* Messages area */}
       <div className="relative flex-1 overflow-y-auto px-4 py-3">
+        {loadError && <div role="alert" className="mb-3 text-sm text-red-600">{loadError} <button onClick={loadMessages} className="underline">Retry</button></div>}
         {/* Drag overlay */}
         {dragOver && (
           <div className="absolute inset-0 z-10 flex items-center justify-center rounded-md border-2 border-dashed border-emerald-400 bg-emerald-50/80">
@@ -196,7 +204,7 @@ export function MessagePanel({
           <div className="flex h-full items-center justify-center">
             <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
           </div>
-        ) : messages.length === 0 ? (
+        ) : messages.length === 0 && !loadError ? (
           <div className="flex h-full flex-col items-center justify-center text-center">
             <MessageSquare className="mb-3 h-10 w-10 text-gray-300" />
             <p className="text-sm font-medium text-gray-500">No messages yet</p>
@@ -233,7 +241,10 @@ export function MessagePanel({
                             )}
                           >
                             <Paperclip className="h-3 w-3 shrink-0" />
-                            <span className="truncate">{att.filename}</span>
+                            {isLocalMode ? <button className="truncate underline" onClick={async () => {
+                              try { await downloadPrivateFile(att.id, 'message', att.filename, portalToken) }
+                              catch { setSendError('The private attachment could not be downloaded. Please try again.') }
+                            }}>{att.filename}</button> : <span className="truncate">{att.filename}</span>}
                             <span className="shrink-0 opacity-70">
                               {formatFileSize(att.file_size)}
                             </span>

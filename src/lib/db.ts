@@ -1,9 +1,11 @@
 // src/lib/db.ts
-// Supabase database helper functions
+// Database helpers with explicit demo, local and cloud boundaries.
 // Every query checks for error before using data (golden path).
 
 import { supabase } from '@/lib/supabase'
-import { isDemoMode } from '@/lib/mode'
+import { isDemoMode, isLocalMode } from '@/lib/mode'
+import { backendRequest, portalRequest, BackendError } from '@/lib/backend'
+import { uploadLocalDocument, uploadLocalLetter } from '@/lib/files'
 import {
   getDemoClientByToken,
   getDemoRequirementsWithUploads,
@@ -17,8 +19,10 @@ import type {
   RequirementWithUploads,
   EngagementLetter,
   EngagementLetterWithSignature,
+  PortalEngagementLetter,
   ClientPortalData,
   Bookkeeper,
+  ReminderLog,
 } from '@/types'
 import { getCurrentPeriod } from '@/lib/utils'
 
@@ -29,6 +33,10 @@ export async function fetchClientByToken(token: string): Promise<ClientPortalDat
   if (isDemoMode) return getDemoClientByToken(token)
 
   const { year, month } = getCurrentPeriod()
+  if (isLocalMode) {
+    try { return await portalRequest<ClientPortalData>('/period', token, { year, month }) }
+    catch (cause) { if (cause instanceof BackendError && cause.status === 404) return null; throw cause }
+  }
 
   // Fetch client by token
   const { data: client, error: clientError } = await supabase
@@ -104,7 +112,9 @@ export async function uploadDocumentFile(
   requirementId: string,
   year: number,
   month: number,
+  portalToken?: string,
 ): Promise<DocumentUpload> {
+  if (isLocalMode) return uploadLocalDocument(file, clientId, requirementId, year, month, portalToken)
   if (isDemoMode) {
     // Simulate a successful upload with a fake record
     return {
@@ -194,7 +204,7 @@ export async function notifyBookkeeperOfUpload(
   periodMonth: number,
   portalToken: string,
 ): Promise<void> {
-  if (isDemoMode) return
+  if (isDemoMode || isLocalMode) return
 
   try {
     await fetch('/api/notify-upload', {
@@ -212,6 +222,7 @@ export async function notifyBookkeeperOfUpload(
 
 /** Fetch all clients for the authenticated bookkeeper */
 export async function fetchClients(): Promise<Client[]> {
+  if (isLocalMode) return backendRequest<Client[]>('/clients')
   const { data, error } = await supabase
     .from('clients')
     .select('*')
@@ -223,6 +234,7 @@ export async function fetchClients(): Promise<Client[]> {
 
 /** Fetch requirements for a specific client */
 export async function fetchRequirements(clientId: string): Promise<DocumentRequirement[]> {
+  if (isLocalMode) return (await backendRequest<{ requirements: DocumentRequirement[] }>(`/clients/${clientId}`)).requirements
   const { data, error } = await supabase
     .from('document_requirements')
     .select('*')
@@ -239,6 +251,7 @@ export async function fetchUploadsForPeriod(
   year: number,
   month: number,
 ): Promise<DocumentUpload[]> {
+  if (isLocalMode) return (await fetchLocalClientPeriod(clientId, year, month)).uploads
   const { data, error } = await supabase
     .from('document_uploads')
     .select('*')
@@ -257,6 +270,7 @@ export async function fetchRequirementsWithUploads(
   month: number,
 ): Promise<RequirementWithUploads[]> {
   if (isDemoMode) return getDemoRequirementsWithUploads(clientId)
+  if (isLocalMode) return (await fetchLocalClientPeriod(clientId, year, month)).requirements
 
   const [requirements, uploads] = await Promise.all([
     fetchRequirements(clientId),
@@ -291,12 +305,27 @@ export async function fetchClientUploadHistory(
   return (data ?? []) as UploadHistoryRow[]
 }
 
+/** One tenant-scoped snapshot for the local client detail screen. */
+export async function fetchLocalClientPeriod(clientId: string, year: number, month: number) {
+  const result = await backendRequest<{
+    client: Client; requirements: DocumentRequirement[]; uploads: DocumentUpload[];
+    reminders: ReminderLog[]; letters: EngagementLetterWithSignature[];
+  }>(`/clients/${clientId}/period`, { year, month })
+  return {
+    ...result,
+    requirements: result.requirements.map(req => ({
+      ...req, uploads: result.uploads.filter(upload => upload.requirement_id === req.id),
+    })),
+  }
+}
+
 // ─── ENGAGEMENT LETTERS & SIGNATURES ────────────────────────────────────────
 
 export async function fetchEngagementLetters(
   clientId: string
 ): Promise<EngagementLetterWithSignature[]> {
   if (isDemoMode) return []
+  if (isLocalMode) return backendRequest<EngagementLetterWithSignature[]>(`/clients/${clientId}/letters`)
 
   const { data: letters, error } = await supabase
     .from('engagement_letters')
@@ -329,6 +358,7 @@ export async function uploadEngagementLetter(
   bookkeeperId: string,
   label: string,
 ): Promise<EngagementLetter> {
+  if (isLocalMode) return uploadLocalLetter(file, clientId, label)
   const path = `${bookkeeperId}/${clientId}/engagement-letters/${Date.now()}_${file.name}`
 
   const { error: uploadErr } = await supabase.storage
@@ -358,7 +388,8 @@ export async function uploadEngagementLetter(
 export async function fetchEngagementLettersForPortal(
   clientId: string,
   portalToken: string,
-): Promise<EngagementLetterWithSignature[]> {
+): Promise<PortalEngagementLetter[]> {
+  if (isLocalMode) return portalRequest<PortalEngagementLetter[]>('/letters', portalToken, {})
   // Public function — validates via portal_token
   const { data: client, error: clientErr } = await supabase
     .from('clients')

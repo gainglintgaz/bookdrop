@@ -68,18 +68,18 @@ interface ActivityFeedProps {
 export function ActivityFeed({ maxItems = 10, className }: ActivityFeedProps) {
   const [items, setItems] = useState<AppNotification[]>([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(false)
   const navigate = useNavigate()
 
-  const load = useCallback(async () => {
-    setLoading(true)
-    const all = await fetchNotifications()
-    setItems(all.slice(0, maxItems))
-    setLoading(false)
-  }, [maxItems])
-
   useEffect(() => {
-    void load()
-  }, [load])
+    let active = true
+    fetchNotifications().then(all => {
+      if (active) { setItems(all); setLoading(false) }
+    }).catch(() => {
+      if (active) { setError(true); setLoading(false) }
+    })
+    return () => { active = false }
+  }, [])
 
   const handleClick = useCallback(
     (notification: AppNotification) => {
@@ -113,16 +113,16 @@ export function ActivityFeed({ maxItems = 10, className }: ActivityFeedProps) {
     <div className={cn('rounded-xl border border-gray-200 bg-white p-6', className)}>
       <h3 className="mb-4 text-sm font-semibold text-gray-900">Recent Activity</h3>
 
-      {items.length === 0 ? (
+      {error ? <p role="alert" className="py-6 text-center text-sm text-gray-500">Unable to load recent activity.</p> : items.length === 0 ? (
         <p className="py-6 text-center text-sm text-gray-400">
           No recent activity to show.
         </p>
       ) : (
         <div className="relative">
-          {items.map((notification, index) => {
+          {items.slice(0, maxItems).map((notification, index) => {
             const config = ICON_MAP[notification.type]
             const IconComponent = config.icon
-            const isLast = index === items.length - 1
+            const isLast = index === Math.min(items.length, maxItems) - 1
 
             return (
               <div key={notification.id} className="relative flex gap-3 pb-4 last:pb-0">

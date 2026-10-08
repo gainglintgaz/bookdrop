@@ -5,7 +5,7 @@ export interface MessageAttachment {
   id: string
   filename: string
   file_size: number
-  storage_path: string
+  storage_path?: string
   mime_type: string
 }
 

@@ -5,7 +5,8 @@ import { tenantConfig } from '@/lib/tenant.config'
 import { cn } from '@/lib/utils'
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
 import type { ReminderTone } from '@/types'
-import { isDemoMode } from '@/lib/mode'
+import { isDemoMode, isLocalMode } from '@/lib/mode'
+import { saveLocalProfile } from '@/lib/profile'
 import { Save, CheckCircle, ExternalLink } from 'lucide-react'
 
 export function SettingsPage() {
@@ -45,9 +46,7 @@ export function SettingsPage() {
     setSaved(false)
     setSubmitting(true)
 
-    const { error: updateErr } = await supabase
-      .from('bookkeepers')
-      .update({
+    const preferences = {
         full_name: fullName.trim(),
         practice_name: practiceName.trim(),
         reply_to_email: replyToEmail.trim(),
@@ -55,17 +54,24 @@ export function SettingsPage() {
         notify_on_complete: notifyOnComplete,
         notify_on_any_upload: notifyOnAnyUpload,
         notify_on_late: notifyOnLate,
-      })
-      .eq('id', bookkeeper.id)
-
-    setSubmitting(false)
-
-    if (updateErr) {
-      setError(updateErr.message)
-    } else {
+      }
+    try {
+      if (isLocalMode) {
+        const savedProfile = await saveLocalProfile(preferences, bookkeeper.id)
+        useAuthStore.setState({ bookkeeper: savedProfile })
+      } else if (isDemoMode) {
+        useAuthStore.setState({ bookkeeper: { ...bookkeeper, ...preferences } })
+      } else {
+        const { error: updateErr } = await supabase.from('bookkeepers').update(preferences).eq('id', bookkeeper.id)
+        if (updateErr) throw new Error(updateErr.message)
+        await fetchBookkeeper()
+      }
       setSaved(true)
-      fetchBookkeeper()
       setTimeout(() => setSaved(false), 3000)
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'Could not save your preferences. Please try again.')
+    } finally {
+      setSubmitting(false)
     }
   }
 
@@ -176,9 +182,9 @@ export function SettingsPage() {
             {bookkeeper.stripe_customer_id && (
               <button
                 type="button"
-                disabled={billingLoading || isDemoMode}
+                disabled={billingLoading || isDemoMode || isLocalMode}
                 onClick={async () => {
-                  if (isDemoMode || !bookkeeper) return
+                  if (isDemoMode || isLocalMode || !bookkeeper) return
                   setBillingLoading(true)
                   try {
                     const endpoint = bookkeeper.stripe_customer_id
@@ -223,6 +229,9 @@ export function SettingsPage() {
           </div>
           {isDemoMode && (
             <p className="mt-2 text-xs text-gray-400">Billing is disabled in demo mode.</p>
+          )}
+          {isLocalMode && (
+            <p className="mt-2 text-xs text-gray-400">Billing is not available in this workspace yet.</p>
           )}
         </fieldset>
 

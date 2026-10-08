@@ -1,7 +1,8 @@
 // src/lib/messages.ts
 // Message service — demo mode uses in-memory Map, cloud mode uses Supabase.
 
-import { isDemoMode } from '@/lib/mode'
+import { isDemoMode, isLocalMode } from '@/lib/mode'
+import { backendRequest, portalRequest, portalHeaders, readBackendJson, BackendError } from '@/lib/backend'
 import { supabase } from '@/lib/supabase'
 import type { Message, MessageThread } from '@/types/messages'
 
@@ -294,8 +295,16 @@ async function cloudGetUnreadCount(bookkeeperIdParam: string): Promise<number> {
 
 // ─── PUBLIC API ────────────────────────────────────────────────────────────
 
-export async function fetchMessages(clientId: string): Promise<Message[]> {
+const localClient = (clientId: string) => {
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(clientId)) throw new BackendError('INVALID_INPUT', 400, 'Invalid conversation.')
+  return `/clients/${clientId}/messages`
+}
+function participant(senderType: 'bookkeeper' | 'client', portalToken?: string) {
+  if (senderType !== (portalToken === undefined ? 'bookkeeper' : 'client')) throw new BackendError('FORBIDDEN', 403, 'This message sender is not available in this session.')
+}
+export async function fetchMessages(clientId: string, portalToken?: string): Promise<Message[]> {
   if (isDemoMode) return demoFetchMessages(clientId)
+  if (isLocalMode) return portalToken === undefined ? backendRequest<Message[]>(`${localClient(clientId)}/list`, {}) : portalRequest<Message[]>(`${localClient(clientId)}/list`, portalToken, {})
   return cloudFetchMessages(clientId)
 }
 
@@ -304,17 +313,41 @@ export async function sendMessage(
   content: string,
   senderType: 'bookkeeper' | 'client',
   attachments?: File[],
+  portalToken?: string,
 ): Promise<Message> {
   if (isDemoMode) return demoSendMessage(clientId, content, senderType)
+  if (isLocalMode) {
+    participant(senderType, portalToken)
+    const route = `${portalToken === undefined ? '' : '/portal'}${localClient(clientId)}/send`
+    const headers = portalToken === undefined ? {} : portalHeaders(portalToken)
+    const files = attachments ?? []
+    if (!content.trim() || content.length > 10000 || files.length > 5 || files.some(file => !file.size) || files.reduce((sum, file) => sum + file.size, 0) >= 50 * 1024 * 1024) throw new BackendError('INVALID_INPUT', 400, 'Use a message of up to 10,000 characters and at most five files totaling less than 50 MB.')
+    const form = new FormData(); form.append('content', content.trim())
+    for (const file of files) form.append('attachments', file, file.name)
+    try {
+      const response = await fetch(`/api/bookdrop${route}`, { method: 'POST', credentials: portalToken === undefined ? 'same-origin' : 'omit', redirect: 'error', cache: 'no-store', headers, body: form, signal: AbortSignal.timeout(120000) })
+      return await readBackendJson<Message>(response)
+    } catch (cause) {
+      if (cause instanceof BackendError) throw cause
+      throw new BackendError('UPLOAD_INCOMPLETE', 0, 'Message delivery could not be confirmed. Refresh the conversation before trying again.')
+    }
+  }
   return cloudSendMessage(clientId, content, senderType, attachments)
 }
 
 export async function markAsRead(
   clientId: string,
   senderType: 'bookkeeper' | 'client',
+  portalToken?: string,
 ): Promise<void> {
   if (isDemoMode) {
     demoMarkAsRead(clientId, senderType)
+    return
+  }
+  if (isLocalMode) {
+    participant(senderType, portalToken)
+    if (portalToken === undefined) await backendRequest(`${localClient(clientId)}/read`, {})
+    else await portalRequest(`${localClient(clientId)}/read`, portalToken, {})
     return
   }
   return cloudMarkAsRead(clientId, senderType)
@@ -322,10 +355,12 @@ export async function markAsRead(
 
 export async function fetchThreads(bookkeeperIdParam: string): Promise<MessageThread[]> {
   if (isDemoMode) return demoFetchThreads()
+  if (isLocalMode) return backendRequest<MessageThread[]>('/messages/threads')
   return cloudFetchThreads(bookkeeperIdParam)
 }
 
 export async function getUnreadCount(bookkeeperIdParam: string): Promise<number> {
   if (isDemoMode) return demoGetUnreadCount()
+  if (isLocalMode) return (await backendRequest<{ count: number }>('/messages/unread')).count
   return cloudGetUnreadCount(bookkeeperIdParam)
 }

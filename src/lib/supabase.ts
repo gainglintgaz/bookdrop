@@ -2,8 +2,8 @@
 // Supabase client — single instance shared across the app.
 // In demo mode, exports a dummy object so nothing crashes.
 
-import { isDemoMode } from '@/lib/mode'
-import { createClient, type SupabaseClient } from '@supabase/supabase-js'
+import { isDemoMode, isLocalMode } from '@/lib/mode'
+import type { SupabaseClient } from '@supabase/supabase-js'
 
 let _supabase: SupabaseClient
 
@@ -14,7 +14,7 @@ if (isDemoMode) {
   const handler: ProxyHandler<Record<string, unknown>> = {
     get(_target, prop) {
       if (prop === 'then') return undefined // not a thenable
-      return (..._args: unknown[]) => new Proxy(chainable, handler)
+      return () => new Proxy(chainable, handler)
     },
   }
   // Make terminal calls resolve
@@ -24,7 +24,7 @@ if (isDemoMode) {
         // resolve with { data: null, error: null }
         return (resolve: (v: unknown) => void) => resolve(noop())
       }
-      return (..._args: unknown[]) => new Proxy(chainable, terminalHandler)
+      return () => new Proxy(chainable, terminalHandler)
     },
   }
   _supabase = new Proxy({} as Record<string, unknown>, {
@@ -52,6 +52,14 @@ if (isDemoMode) {
       return () => new Proxy(chainable, terminalHandler)
     },
   }) as unknown as SupabaseClient
+} else if (isLocalMode) {
+  // Fail closed while callers migrate to the local API. Never initialize the
+  // hosted SDK or silently return successful empty results in local mode.
+  _supabase = new Proxy({} as SupabaseClient, {
+    get() {
+      throw new Error('This operation is not connected to the local backend yet.')
+    },
+  })
 } else {
   const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
   const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
@@ -62,6 +70,9 @@ if (isDemoMode) {
     )
   }
 
+  // Loading the hosted SDK belongs to the cloud branch too. Local and demo
+  // imports must not evaluate its auth/storage dependency graph.
+  const { createClient } = await import('@supabase/supabase-js')
   _supabase = createClient(supabaseUrl, supabaseAnonKey)
 }
 

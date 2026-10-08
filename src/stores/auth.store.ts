@@ -4,11 +4,14 @@
 
 import { create } from 'zustand'
 import { supabase } from '@/lib/supabase'
-import { isDemoMode } from '@/lib/mode'
+import { isDemoMode, isLocalMode } from '@/lib/mode'
+import { backendRequest, fetchBackendSession, type BackendSession } from '@/lib/backend'
 import { demoBookkeeper, demoSoloUser } from '@/lib/demo-data'
 import { generatePortalToken } from '@/lib/utils'
 import type { Bookkeeper, AccountType } from '@/types'
-import type { User, Session } from '@supabase/supabase-js'
+
+type User = BackendSession['user']
+type Session = { user: User }
 
 interface AuthState {
   user: User | null
@@ -47,6 +50,18 @@ export const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
       return
     }
 
+    if (isLocalMode) {
+      try {
+        const session = await fetchBackendSession()
+        set({ user: session?.user ?? null, session, bookkeeper: session?.bookkeeper ?? null, error: null })
+      } catch (error) {
+        set({ user: null, session: null, bookkeeper: null, error: error instanceof Error ? error.message : 'Unable to load session.' })
+      } finally {
+        set({ loading: false })
+      }
+      return
+    }
+
     const { data: { session } } = await supabase.auth.getSession()
 
     if (session) {
@@ -80,6 +95,19 @@ export const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
       return { error: null }
     }
 
+    if (isLocalMode) {
+      try {
+        await backendRequest('/auth/sign-in', { email: _email, password: _password })
+        await get().initialize()
+        if (!get().session) return { error: get().error ?? 'Sign-in did not create a session.' }
+        return { error: null }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Unable to sign in.'
+        set({ error: message })
+        return { error: message }
+      }
+    }
+
     const { error } = await supabase.auth.signInWithPassword({ email: _email, password: _password })
     if (error) {
       set({ error: error.message })
@@ -100,6 +128,19 @@ export const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
         loading: false,
       })
       return { error: null }
+    }
+
+    if (isLocalMode) {
+      try {
+        await backendRequest('/auth/sign-up', { email, password, fullName, accountType: 'practitioner' })
+        await get().initialize()
+        if (!get().session) return { error: get().error ?? 'Sign-up did not create a session. Please sign in.' }
+        return { error: null }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Unable to sign up.'
+        set({ error: message })
+        return { error: message }
+      }
     }
 
     const { data, error } = await supabase.auth.signUp({ email, password })
@@ -140,6 +181,19 @@ export const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
         loading: false,
       })
       return { error: null }
+    }
+
+    if (isLocalMode) {
+      try {
+        await backendRequest('/auth/sign-up', { email, password, fullName, businessName, accountType: 'solo' })
+        await get().initialize()
+        if (!get().session) return { error: get().error ?? 'Sign-up did not create a session. Please sign in.' }
+        return { error: null }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Unable to sign up.'
+        set({ error: message })
+        return { error: message }
+      }
     }
 
     const { data, error } = await supabase.auth.signUp({ email, password })
@@ -201,17 +255,38 @@ export const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
   },
 
   signOut: async () => {
+    if (isLocalMode) {
+      try {
+        await backendRequest('/auth/sign-out', {})
+        set({ user: null, session: null, bookkeeper: null, error: null })
+      } catch (error) {
+        set({ error: error instanceof Error ? error.message : 'Unable to sign out.' })
+      }
+      return
+    }
     await supabase.auth.signOut()
     set({ user: null, session: null, bookkeeper: null })
   },
 
   resetPassword: async (email) => {
+    if (isLocalMode) {
+      try {
+        await backendRequest('/auth/reset-password', { email })
+        return { error: null }
+      } catch (error) {
+        return { error: error instanceof Error ? error.message : 'Unable to reset password.' }
+      }
+    }
     const { error } = await supabase.auth.resetPasswordForEmail(email)
     if (error) return { error: error.message }
     return { error: null }
   },
 
   fetchBookkeeper: async () => {
+    if (isLocalMode) {
+      await get().initialize()
+      return
+    }
     const user = get().user
     if (!user) return
 

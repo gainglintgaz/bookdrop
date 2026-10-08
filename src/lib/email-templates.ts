@@ -222,7 +222,6 @@ const REMINDER_INTROS: Record<ReminderTone, (month: string, practiceName: string
 
 export function generateReminderEmail(config: ReminderConfig): EmailTemplate {
   const {
-    clientName: _clientName,
     contactName,
     bookkeeperName,
     practiceName,
@@ -553,7 +552,7 @@ interface ThankYouConfig {
 }
 
 export function generateThankYouEmail(config: ThankYouConfig): EmailTemplate {
-  const { clientName: _clientName2, contactName, bookkeeperName, month, docsReceived } = config
+  const { contactName, bookkeeperName, month, docsReceived } = config
 
   const subject = `All ${month} documents received - thank you!`
   const previewText = `We've received all ${docsReceived} documents for ${month}. Thank you for being on top of it!`

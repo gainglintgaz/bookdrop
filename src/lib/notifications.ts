@@ -1,8 +1,9 @@
 // src/lib/notifications.ts
 // Notification service — demo mode uses in-memory store, cloud mode uses Supabase.
 
-import { isDemoMode } from '@/lib/mode'
+import { isDemoMode, isLocalMode } from '@/lib/mode'
 import { supabase } from '@/lib/supabase'
+import { backendRequest } from '@/lib/backend'
 
 export type NotificationType =
   | 'upload_complete'
@@ -159,6 +160,7 @@ function getDemoStore(): AppNotification[] {
 // ─── PUBLIC API ─────────────────────────────────────────────────────────────
 
 export async function fetchNotifications(): Promise<AppNotification[]> {
+  if (isLocalMode) return backendRequest('/notifications')
   if (isDemoMode) {
     return [...getDemoStore()].sort(
       (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
@@ -183,6 +185,10 @@ export async function fetchNotifications(): Promise<AppNotification[]> {
 }
 
 export async function markNotificationRead(id: string): Promise<void> {
+  if (isLocalMode) {
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) throw new Error('Invalid notification.')
+    await backendRequest(`/notifications/${id}/read`, {}); return
+  }
   if (isDemoMode) {
     const store = getDemoStore()
     const item = store.find(n => n.id === id)
@@ -201,6 +207,7 @@ export async function markNotificationRead(id: string): Promise<void> {
 }
 
 export async function markAllRead(): Promise<void> {
+  if (isLocalMode) { await backendRequest('/notifications/read-all', {}); return }
   if (isDemoMode) {
     for (const n of getDemoStore()) {
       n.read = true
@@ -219,6 +226,7 @@ export async function markAllRead(): Promise<void> {
 }
 
 export async function getUnreadNotificationCount(): Promise<number> {
+  if (isLocalMode) return (await backendRequest<{ count: number }>('/notifications/unread')).count
   if (isDemoMode) {
     return getDemoStore().filter(n => !n.read).length
   }
@@ -249,6 +257,7 @@ export async function createNotification(
   type: NotificationType,
   opts: CreateNotificationOpts,
 ): Promise<AppNotification> {
+  if (isLocalMode) throw new Error('Notifications are created by server events.')
   const notification: AppNotification = {
     id: crypto.randomUUID(),
     type,

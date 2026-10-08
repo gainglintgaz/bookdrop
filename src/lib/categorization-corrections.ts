@@ -3,7 +3,8 @@
 // here. This is the highest-density training signal in the entire product
 // (per DATA_FLYWHEEL.md §C — corrections are Phase A for BookDrop, not Phase E).
 //
-// Two storage paths:
+// Three storage paths:
+//   • Local: verified-cookie API; server derives owner, status and timestamp
 //   • Cloud (production): writes to Supabase `categorization_corrections` table
 //   • Demo: writes to localStorage so the UX behaves identically and we can
 //     test the full correction-capture flow without a database
@@ -12,7 +13,8 @@
 // undo an accidental correction (sets status='undone').
 
 import { supabase } from './supabase'
-import { isDemoMode } from './mode'
+import { isDemoMode, isLocalMode } from './mode'
+import { backendRequest } from './backend'
 import type { CategorizationCorrection } from '@/types'
 
 const DEMO_STORAGE_KEY = 'bookdrop:demo:categorization_corrections'
@@ -34,14 +36,26 @@ export interface CorrectionInput {
 }
 
 /**
- * Record a single categorization correction. Never throws — failures are logged
- * with full context and the function returns null. Correction-capture must
+ * Record a single categorization correction. Never throws — failures return
+ * null without logging private transaction or provider details. Correction-capture must
  * never block the bookkeeper's UI flow.
  *
  * Per ai-first-principles.md §5 anti-fabrication rule 6: silent failure surfaces
  * a real placeholder result (null) rather than fabricating success.
  */
 export async function recordCorrection(input: CorrectionInput): Promise<string | null> {
+  if (isLocalMode) {
+    try {
+      const saved = await backendRequest<CategorizationCorrection>('/corrections', {
+        clientId: input.clientId, uploadId: input.uploadId, transactionDate: input.transactionDate,
+        transactionAmountCents: input.transactionAmountCents, vendorNormalized: input.vendorNormalized,
+        descriptionRaw: input.descriptionRaw, originalCategory: input.originalCategory, correctedCategory: input.correctedCategory,
+        originalSubcategory: input.originalSubcategory, correctedSubcategory: input.correctedSubcategory,
+        originalConfidence: input.originalConfidence, reason: input.reason,
+      })
+      return typeof saved?.id === 'string' ? saved.id : null
+    } catch { return null }
+  }
   const id = crypto.randomUUID()
   const now = new Date().toISOString()
 
@@ -70,8 +84,8 @@ export async function recordCorrection(input: CorrectionInput): Promise<string |
       existing.push(correction)
       window.localStorage.setItem(DEMO_STORAGE_KEY, JSON.stringify(existing))
       return id
-    } catch (err) {
-      console.warn('[recordCorrection] demo storage failed:', err)
+    } catch {
+      console.warn('[recordCorrection] demo storage unavailable')
       return null
     }
   }
@@ -81,12 +95,12 @@ export async function recordCorrection(input: CorrectionInput): Promise<string |
       .from('categorization_corrections')
       .insert(correction)
     if (error) {
-      console.warn('[recordCorrection] supabase insert failed:', error.message)
+      console.warn('[recordCorrection] storage unavailable')
       return null
     }
     return id
-  } catch (err) {
-    console.warn('[recordCorrection] threw:', err)
+  } catch {
+    console.warn('[recordCorrection] storage unavailable')
     return null
   }
 }
@@ -97,6 +111,10 @@ export async function recordCorrection(input: CorrectionInput): Promise<string |
  * in the learning corpus.
  */
 export async function undoCorrection(correctionId: string): Promise<boolean> {
+  if (isLocalMode) {
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(correctionId)) return false
+    try { return (await backendRequest<{ ok: boolean }>(`/corrections/${correctionId}/undo`, {})).ok === true } catch { return false }
+  }
   if (isDemoMode) {
     try {
       const existing = readDemoCorrections()
@@ -129,6 +147,7 @@ export async function undoCorrection(correctionId: string): Promise<boolean> {
 export async function getCorrectionsForBookkeeper(
   bookkeeperId: string,
 ): Promise<CategorizationCorrection[]> {
+  if (isLocalMode) return backendRequest<CategorizationCorrection[]>('/corrections')
   if (isDemoMode) {
     return readDemoCorrections().filter(c => c.bookkeeper_id === bookkeeperId)
   }
@@ -140,12 +159,12 @@ export async function getCorrectionsForBookkeeper(
       .eq('bookkeeper_id', bookkeeperId)
       .order('applied_at', { ascending: false })
     if (error) {
-      console.warn('[getCorrectionsForBookkeeper] failed:', error.message)
+      console.warn('[getCorrectionsForBookkeeper] storage unavailable')
       return []
     }
     return (data ?? []) as CategorizationCorrection[]
-  } catch (err) {
-    console.warn('[getCorrectionsForBookkeeper] threw:', err)
+  } catch {
+    console.warn('[getCorrectionsForBookkeeper] storage unavailable')
     return []
   }
 }

@@ -14,7 +14,8 @@ import {
   type StatementType,
 } from '@/lib/parse-bank-statement'
 import type { RequirementWithUploads } from '@/types'
-import { isDemoMode } from '@/lib/mode'
+import { isDemoMode, isLocalMode } from '@/lib/mode'
+import { fetchPrivateFile } from '@/lib/files'
 import { supabase } from '@/lib/supabase'
 import {
   FileSearch,
@@ -100,7 +101,7 @@ export function StatementParserPanel({ requirements, clientName, year, month, on
     const newResults: ParsedRequirement[] = []
 
     for (const { requirement, upload } of parseable) {
-      const entry: ParsedRequirement = {
+      let entry: ParsedRequirement = {
         requirementId: requirement.id,
         filename: upload.filename_original,
         summary: null,
@@ -111,26 +112,22 @@ export function StatementParserPanel({ requirements, clientName, year, month, on
       setResults([...newResults])
 
       try {
-        const { data: fileData, error: dlError } = await supabase.storage
-          .from('documents')
-          .download(upload.storage_path)
-
-        if (dlError || !fileData) {
-          entry.error = dlError?.message ?? 'Failed to download file'
-          entry.parsing = false
-          setResults([...newResults])
-          continue
+        let fileData: Blob
+        if (isLocalMode) fileData = await fetchPrivateFile(upload.id)
+        else {
+          const downloaded = await supabase.storage.from('documents').download(upload.storage_path)
+          if (downloaded.error || !downloaded.data) throw new Error('Failed to download file')
+          fileData = downloaded.data
         }
 
         const file = new File([fileData], upload.filename_original, { type: fileData.type })
         const isCSV = upload.filename_original.toLowerCase().endsWith('.csv')
         const summary = isCSV ? await parseCSVStatement(file) : await parseBankStatementPDF(file)
-        entry.summary = summary
-        entry.parsing = false
+        entry = { ...entry, summary, parsing: false }
       } catch (err) {
-        entry.error = err instanceof Error ? err.message : 'Parse failed'
-        entry.parsing = false
+        entry = { ...entry, error: err instanceof Error ? err.message : 'Parse failed', parsing: false }
       }
+      newResults[newResults.length - 1] = entry
       setResults([...newResults])
     }
 
@@ -138,7 +135,7 @@ export function StatementParserPanel({ requirements, clientName, year, month, on
   }
 
   const handleParseFile = async (file: File, requirementId: string) => {
-    const entry: ParsedRequirement = {
+    let entry: ParsedRequirement = {
       requirementId,
       filename: file.name,
       summary: null,
@@ -153,11 +150,9 @@ export function StatementParserPanel({ requirements, clientName, year, month, on
 
     try {
       const summary = await parseBankStatementPDF(file)
-      entry.summary = summary
-      entry.parsing = false
+      entry = { ...entry, summary, parsing: false }
     } catch (err) {
-      entry.error = err instanceof Error ? err.message : 'Failed to parse document'
-      entry.parsing = false
+      entry = { ...entry, error: err instanceof Error ? err.message : 'Failed to parse document', parsing: false }
     }
 
     setResults(prev => {

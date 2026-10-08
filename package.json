@@ -9,8 +9,9 @@
     "lint": "eslint .",
     "lint:strict": "eslint . --max-warnings 0",
     "preview": "vite preview",
-    "test": "vitest run",
+    "test": "vitest run tests/",
     "test:watch": "vitest",
+    "test:node": "node --test server/jobs.test.mjs server/r2-storage.test.mjs server/storage.test.mjs",
     "audit-docs": "powershell -ExecutionPolicy Bypass -File ./scripts/audit-docs.ps1",
     "preflight": "npm run lint:strict && npm run build && npm run test && npm run audit-docs"
   },

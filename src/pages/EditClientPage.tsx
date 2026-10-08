@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
+import { isLocalMode } from '@/lib/mode'
+import { backendRequest } from '@/lib/backend'
 import { tenantConfig } from '@/lib/tenant.config'
 import { cn } from '@/lib/utils'
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
@@ -44,13 +46,24 @@ export function EditClientPage() {
     setError(null)
 
     try {
-      const { data: clientData, error: clientErr } = await supabase
-        .from('clients')
-        .select('*')
-        .eq('id', clientId)
-        .maybeSingle()
+      let clientData: Client | null
+      let reqs: DocumentRequirement[]
+      if (isLocalMode) {
+        const result = await backendRequest<{ client: Client; requirements: DocumentRequirement[] }>(`/clients/${clientId}`)
+        clientData = result.client
+        reqs = result.requirements
+      } else {
+        const [clientResult, reqResult] = await Promise.all([
+          supabase.from('clients').select('*').eq('id', clientId).maybeSingle(),
+          supabase.from('document_requirements').select('*').eq('client_id', clientId)
+            .order('sort_order', { ascending: true }),
+        ])
 
-      if (clientErr) throw new Error(clientErr.message)
+        if (clientResult.error) throw new Error(clientResult.error.message)
+        if (reqResult.error) throw new Error(reqResult.error.message)
+        clientData = clientResult.data
+        reqs = reqResult.data ?? []
+      }
       if (!clientData) throw new Error('Client not found')
 
       setClient(clientData)
@@ -60,15 +73,6 @@ export function EditClientPage() {
       setNotesForClient(clientData.notes_for_client ?? '')
       setNotesPrivate(clientData.notes_private ?? '')
       setIsActive(clientData.is_active)
-
-      // Load requirements
-      const { data: reqs, error: reqErr } = await supabase
-        .from('document_requirements')
-        .select('*')
-        .eq('client_id', clientId)
-        .order('sort_order', { ascending: true })
-
-      if (reqErr) throw new Error(reqErr.message)
 
       setRequirements(
         (reqs ?? []).map((r: DocumentRequirement) => ({
@@ -115,6 +119,21 @@ export function EditClientPage() {
     setSubmitting(true)
 
     try {
+      if (isLocalMode) {
+        await backendRequest(`/clients/${client.id}`, {
+          business_name: businessName.trim(),
+          contact_name: contactName.trim() || null,
+          contact_email: contactEmail.trim(),
+          notes_for_client: notesForClient.trim() || null,
+          notes_private: notesPrivate.trim() || null,
+          is_active: isActive,
+          requirements: requirements.filter(r => r.label.trim()).map(r => ({
+            id: r.id, label: r.label.trim(), doc_type: r.doc_type, required: r.required,
+          })),
+        })
+        navigate(`/clients/${client.id}`)
+        return
+      }
       // Update client row
       const { error: updateErr } = await supabase
         .from('clients')

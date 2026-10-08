@@ -21,7 +21,8 @@
 import { useState, lazy, Suspense } from 'react'
 import { Plus, Trash2, Send, Loader2, CheckCircle, AlertCircle, Users, MapPin } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { supabase } from '@/lib/supabase'
+import { fetchEngagementDocument } from '@/lib/engagement-document'
+import { isDemoMode, isLocalMode } from '@/lib/mode'
 import type { SignerRole, SignaturePlacement, EngagementLetter } from '@/types'
 
 // Lazy-load the placement designer — pdfjs-dist is heavy (440KB chunk) and
@@ -116,7 +117,7 @@ export function EngagementLetterEditor({ letter, bookkeeperId, onInvitesSent }: 
   /**
    * Open the visual placement designer.
    * Validates signatories first (need at least name + email per row), then
-   * downloads the PDF from Supabase Storage so the designer can render it.
+   * downloads the PDF through the mode's private document transport.
    */
   const handleOpenDesigner = async () => {
     const validationError = validate()
@@ -126,21 +127,8 @@ export function EngagementLetterEditor({ letter, bookkeeperId, onInvitesSent }: 
     }
     setError(null)
 
-    // Need to download the PDF — uses a 1-hour signed URL like EngagementLetterRow.
     try {
-      const { data, error: dlErr } = await supabase.storage
-        .from('documents')
-        .createSignedUrl(letter.storage_path, 3600)
-      if (dlErr || !data?.signedUrl) {
-        setPdfLoadError(dlErr?.message ?? 'Could not generate document URL')
-        return
-      }
-      const resp = await fetch(data.signedUrl)
-      if (!resp.ok) {
-        setPdfLoadError(`Failed to download document (HTTP ${resp.status})`)
-        return
-      }
-      const bytes = await resp.arrayBuffer()
+      const bytes = await fetchEngagementDocument(letter)
       setPdfBytes(bytes)
       setPdfLoadError(null)
       setStage('designing')
@@ -158,6 +146,10 @@ export function EngagementLetterEditor({ letter, bookkeeperId, onInvitesSent }: 
   }
 
   const handleSendInvites = async () => {
+    if (isLocalMode || isDemoMode) {
+      setError(isLocalMode ? 'Invitation email is not available in this workspace yet.' : 'Invitation emails are not sent in demo mode.')
+      return
+    }
     const validationError = validate()
     if (validationError) {
       setError(validationError)

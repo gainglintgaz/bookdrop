@@ -4,6 +4,7 @@ import { ProtectedRoute } from '@/components/shared/ProtectedRoute'
 import { AppShell } from '@/components/shared/AppShell'
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
 import { useAccountType } from '@/hooks/useAccountType'
+import { isLocalMode } from '@/lib/mode'
 
 // ─── Lazy-loaded pages (code-split per route) ─────────────────────────────
 const LandingPage = lazy(() => import('@/pages/LandingPage').then(m => ({ default: m.LandingPage })))
@@ -11,6 +12,7 @@ const UploadPage = lazy(() => import('@/pages/UploadPage').then(m => ({ default:
 const LoginPage = lazy(() => import('@/pages/LoginPage').then(m => ({ default: m.LoginPage })))
 const SignupPage = lazy(() => import('@/pages/SignupPage').then(m => ({ default: m.SignupPage })))
 const ForgotPasswordPage = lazy(() => import('@/pages/ForgotPasswordPage').then(m => ({ default: m.ForgotPasswordPage })))
+const ResetPasswordPage = lazy(() => import('@/pages/ResetPasswordPage').then(m => ({ default: m.ResetPasswordPage })))
 const DashboardPage = lazy(() => import('@/pages/DashboardPage').then(m => ({ default: m.DashboardPage })))
 const BusinessOwnerDashboard = lazy(() => import('@/pages/BusinessOwnerDashboard').then(m => ({ default: m.BusinessOwnerDashboard })))
 const ClientsPage = lazy(() => import('@/pages/ClientsPage').then(m => ({ default: m.ClientsPage })))
@@ -47,6 +49,7 @@ export default function App() {
           <Route path="/login" element={<LoginPage />} />
           <Route path="/signup" element={<SignupPage />} />
           <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+          {isLocalMode && <Route path="/reset-password" element={<ResetPasswordPage />} />}
 
           {/* Protected routes */}
           <Route

@@ -2,13 +2,13 @@
 // Public upload page — no auth required.
 // Clients reach this via their unique portal link: /upload/:token
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, lazy, Suspense } from 'react'
 import { useParams } from 'react-router-dom'
 import { fetchClientByToken, uploadDocumentFile, notifyBookkeeperOfUpload, fetchEngagementLettersForPortal, updateUploadAiEnrichment } from '@/lib/db'
 import { tenantConfig } from '@/lib/tenant.config'
 import { formatPeriod, cn } from '@/lib/utils'
 import { computeSubmissionStatus, getMissingDocuments } from '@/types'
-import type { ClientPortalData, EngagementLetterWithSignature, DocumentUpload } from '@/types'
+import type { ClientPortalData, PortalEngagementLetter, DocumentUpload } from '@/types'
 import { RequirementRow } from '@/components/client/RequirementRow'
 import { EngagementLetterRow } from '@/components/portal/EngagementLetterRow'
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
@@ -17,15 +17,18 @@ import { generateUploadDeadlineICS, getNextDeadline } from '@/lib/calendar'
 import { formatFileSize } from '@/lib/utils'
 import { autoCategorizeUpload } from '@/lib/auto-categorize-upload'
 import { insertDocumentLineItems } from '@/lib/document-lines'
+import { isLocalMode } from '@/lib/mode'
 import { CheckCircle, Clock, FileText, Calendar, Upload, History, AlertCircle, FileSignature } from 'lucide-react'
 
+const PortalMessages = lazy(() => import('@/components/shared/MessagePanel').then(module => ({ default: module.MessagePanel })))
 export function UploadPage() {
   const { token } = useParams<{ token: string }>()
   const [portalData, setPortalData] = useState<ClientPortalData | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [uploadingRequirementId, setUploadingRequirementId] = useState<string | null>(null)
-  const [engagementLetters, setEngagementLetters] = useState<EngagementLetterWithSignature[]>([])
+  const [engagementLetters, setEngagementLetters] = useState<PortalEngagementLetter[]>([])
+  const [showMessages, setShowMessages] = useState(false)
 
   const loadPortalData = useCallback(async () => {
     if (!token) return
@@ -74,6 +77,7 @@ export function UploadPage() {
         requirementId,
         portalData.period.year,
         portalData.period.month,
+        token,
       )
 
       // Notify bookkeeper (fire-and-forget — never blocks the upload)
@@ -198,6 +202,7 @@ export function UploadPage() {
       </header>
 
       <main className="mx-auto max-w-2xl px-4 py-6">
+        {isLocalMode && <p role="status" className="mb-4 rounded-md border border-gray-200 bg-white p-3 text-sm text-gray-600">Documents are saved locally. Email notifications and electronic signing are not configured in local mode yet.</p>}
         {/* Notes from bookkeeper */}
         {client.notes_for_client && (
           <div className="mb-6 rounded-lg border border-primary/20 bg-primary/5 p-4">
@@ -353,6 +358,10 @@ export function UploadPage() {
         )}
 
         {/* Calendar + Contact */}
+        {isLocalMode && token && <section className="mt-8 rounded-lg border border-gray-200 bg-white p-4">
+          <button className="rounded-md border border-gray-200 px-3 py-2 text-sm font-medium" onClick={() => setShowMessages(value => !value)}>{showMessages ? 'Close conversation' : 'Message your bookkeeper'}</button>
+          {showMessages && <Suspense fallback={<LoadingSpinner />}><div className="mt-3 h-[32rem]"><PortalMessages clientId={client.id} clientName={client.business_name} senderType="client" portalToken={token} onClose={() => setShowMessages(false)} className="w-full shadow-none" /></div></Suspense>}
+        </section>}
         <div className="mt-8 rounded-lg border border-gray-200 bg-white p-4 text-center text-sm text-gray-500">
           <button
             onClick={() => generateUploadDeadlineICS(client.business_name, getNextDeadline(portalData.dueDay))}
