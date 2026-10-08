@@ -106,7 +106,7 @@ Both should print non-empty values.
 ## Step 5 — Run the backup manually once (~3 min)
 
 ```powershell
-cd C:\Users\vtbsj\.gemini\antigravity\scratch\bookkeeper-portal
+cd <path-to-project>
 pwsh -File scripts\backup-pg-to-r2.ps1
 ```
 
@@ -151,8 +151,8 @@ Expected output:
    - **Actions tab → New**:
      - Action: `Start a program`
      - Program/script: `pwsh.exe`
-     - Add arguments: `-NoProfile -ExecutionPolicy Bypass -File "C:\Users\vtbsj\.gemini\antigravity\scratch\bookkeeper-portal\scripts\backup-pg-to-r2.ps1"`
-     - Start in: `C:\Users\vtbsj\.gemini\antigravity\scratch\bookkeeper-portal`
+     - Add arguments: `-NoProfile -ExecutionPolicy Bypass -File "<path-to-project>\scripts\backup-pg-to-r2.ps1"`
+     - Start in: `<path-to-project>`
    - **Conditions tab**:
      - Uncheck "Start the task only if the computer is on AC power" (otherwise laptops on battery skip it)
      - Optionally: "Wake the computer to run this task" if you want it to fire even if asleep

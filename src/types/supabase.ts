@@ -2,7 +2,7 @@
 // AUTO-GENERATED from live Supabase schema. Do not edit by hand.
 //
 // Regenerate after every migration with the MCP tool `generate_typescript_types`
-// or via the Supabase CLI: `supabase gen types typescript --project-id mvvadmlivrpyawmlaqye > src/types/supabase.ts`
+// or via the Supabase CLI: `supabase gen types typescript --project-id <project-ref> > src/types/supabase.ts`
 //
 // Last regenerated: 2026-05-12 (after migrations 004-008 applied to live).
 
